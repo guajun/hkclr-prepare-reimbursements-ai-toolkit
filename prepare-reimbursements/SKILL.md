@@ -54,6 +54,12 @@ Set applicant, bank, account, and leader values with `--name`, `--bank`, `--acco
 
 For dependency updates, prefer `uv add <package>` for runtime dependencies and `uv add --dev <package>` for validation, testing, or frontend build helpers. Commit or keep `pyproject.toml` and `uv.lock` together.
 
+After building the manifest and reimbursement workbook, prepare evidence folders and checklists:
+
+```powershell
+uv run python scripts\prepare_taobao_evidence.py --folder "<batch-folder>"
+```
+
 ## Current Limits
 
 Travel reimbursement, Meituan/manual evidence ingestion, and drag-and-drop local frontend are planned workflow layers. Keep them in the convention document until implemented.
