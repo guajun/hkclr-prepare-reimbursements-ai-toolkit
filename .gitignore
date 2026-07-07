@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Local reimbursement data and generated outputs
+订单数据*.xlsx
+reimbursement-manifest.json
+reimbursement-review.xlsx
+報銷清單_Reimbursement list*.xlsx
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.docx

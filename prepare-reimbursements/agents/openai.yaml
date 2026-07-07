@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Reimbursements"
+  short_description: "Build reimbursement manifests and forms"
+  default_prompt: "Use $prepare-reimbursements to scan a reimbursement folder, build a manifest, and generate the reimbursement workbook."
