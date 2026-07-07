@@ -22,6 +22,8 @@ from openpyxl.utils import get_column_letter
 DEFAULT_DOC_TYPE = "淘寶截圖加付款紀錄 Taobao capture screen & payment record"
 DEFAULT_MISSING_REASON = "商家未提供"
 DEFAULT_EVIDENCE = ["taobao_order_detail_screenshot", "payment_record_screenshot"]
+TAOBAO_ORDER_DETAIL_URL = "https://buyertrade.taobao.com/trade/detail/trade_item_detail.htm?biz_order_id={order_no}"
+ALIPAY_DETAIL_URL = "https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo={trade_no}"
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -41,6 +43,9 @@ class OrderItem:
 class ReimbursementOrder:
     source: str
     order_no: str
+    taobao_order_detail_url: str
+    alipay_trade_no: str
+    alipay_detail_url: str
     date: str
     datetime: str
     shop: str
@@ -208,6 +213,9 @@ def read_taobao_orders(path: Path, include_status: str) -> tuple[list[Reimbursem
             ReimbursementOrder(
                 source="taobao",
                 order_no=order_no,
+                taobao_order_detail_url=TAOBAO_ORDER_DETAIL_URL.format(order_no=order_no),
+                alipay_trade_no="",
+                alipay_detail_url="",
                 date=order_date,
                 datetime=order_datetime,
                 shop=cell_text(order_row[3]),
@@ -271,6 +279,9 @@ def write_review_workbook(path: Path, orders: list[ReimbursementOrder], skipped:
     headers = [
         "No.",
         "Order No.",
+        "Taobao Detail URL",
+        "Alipay Trade No.",
+        "Alipay Detail URL",
         "Date",
         "Shop",
         "Item Label",
@@ -293,6 +304,9 @@ def write_review_workbook(path: Path, orders: list[ReimbursementOrder], skipped:
             [
                 index,
                 order.order_no,
+                order.taobao_order_detail_url,
+                order.alipay_trade_no,
+                order.alipay_detail_url,
                 order.date,
                 order.shop,
                 order.item_label,
@@ -316,7 +330,7 @@ def write_review_workbook(path: Path, orders: list[ReimbursementOrder], skipped:
     worksheet.cell(summary_row + 3, 1, "Skipped status")
     worksheet.cell(summary_row + 3, 2, skipped.get("status", 0))
 
-    widths = [8, 24, 14, 22, 36, 14, 12, 12, 52, 22, 46, 24]
+    widths = [8, 24, 70, 30, 80, 14, 22, 36, 14, 12, 12, 52, 22, 46, 24]
     for index, width in enumerate(widths, 1):
         worksheet.column_dimensions[get_column_letter(index)].width = width
     for row in worksheet.iter_rows():

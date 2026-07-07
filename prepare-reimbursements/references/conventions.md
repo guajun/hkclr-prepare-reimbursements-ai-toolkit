@@ -65,6 +65,9 @@ Each parsed order should become one manifest object:
 
 - `source`: `taobao`
 - `order_no`
+- `taobao_order_detail_url`
+- `alipay_trade_no`
+- `alipay_detail_url`
 - `date`
 - `shop`
 - `status`
@@ -80,6 +83,26 @@ Evidence required for Taobao normal reimbursement:
 
 - `taobao_order_detail_screenshot`
 - `payment_record_screenshot`
+
+## Taobao To Alipay Evidence Route
+
+Use the Taobao order detail page as the source of the Alipay transaction id:
+
+1. Open `taobao_order_detail_url` or `https://buyertrade.taobao.com/trade/detail/trade_item_detail.htm?biz_order_id=<order_no>`.
+2. Save the Taobao order-detail screenshot.
+3. Extract the value labelled `支付宝交易号`; store it as `alipay_trade_no`.
+4. Build `alipay_detail_url` as `https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo=<alipay_trade_no>`.
+5. Open `alipay_detail_url` directly and save the Alipay payment-record screenshot.
+
+Only use Alipay bill-list amount/date filtering as a fallback when the Taobao detail page does not expose `支付宝交易号`. Do not rely on amount-only matching when a transaction id is available.
+
+## Alipay Payment Skills Boundary
+
+`alipay/payment-skills` may support live payment flows that appear during reimbursement preparation, such as Alipay cashier links or HTTP 402 Payment Required responses. These skills do not replace Taobao exports, Alipay app screenshots, or other evidence files for historical reimbursement packets.
+
+If a live payment flow is completed while preparing a reimbursement packet, keep the normal evidence requirement: capture or request the Alipay payment-record screenshot that shows date/time, merchant or order reference, and amount. Do not read hidden CLI state or local wallet files to infer reimbursement evidence.
+
+Do not use Alipay payment skills to automate login, 2FA, app-only history browsing, wallet binding, or payment unless the user explicitly requested that payment workflow and remains actively involved.
 
 ## Travel Reimbursement
 

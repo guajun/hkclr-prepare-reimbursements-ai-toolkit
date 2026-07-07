@@ -14,6 +14,8 @@ import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+ALIPAY_DETAIL_URL = "https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo={trade_no}"
+
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -33,11 +35,23 @@ def make_order_folder(evidence_root: Path, index: int, order_no: str) -> Path:
     return folder
 
 
+def alipay_detail_url(order: dict[str, Any]) -> str:
+    if order.get("alipay_detail_url"):
+        return str(order["alipay_detail_url"])
+    trade_no = str(order.get("alipay_trade_no") or "").strip()
+    if trade_no:
+        return ALIPAY_DETAIL_URL.format(trade_no=trade_no)
+    return ""
+
+
 def write_folder_note(folder: Path, order: dict[str, Any], index: int) -> tuple[str, str, str]:
     order_no = order["order_no"]
     order_file = f"{index:02d}_{order_no}_taobao_order_detail.png"
     payment_file = f"{index:02d}_{order_no}_payment_record.png"
     combined_file = f"{index:02d}_{order_no}_combined_receipt.png"
+    taobao_url = order.get("taobao_order_detail_url") or ""
+    alipay_trade_no = order.get("alipay_trade_no") or ""
+    alipay_url = alipay_detail_url(order)
     note_path = folder / "_放截图到这里.txt"
     note_path.write_text(
         "\n".join(
@@ -47,11 +61,15 @@ def write_folder_note(folder: Path, order: dict[str, Any], index: int) -> tuple[
                 f"店铺: {order['shop']}",
                 f"金额: RMB {order['amount_rmb']}",
                 f"物品: {order['item_label']}",
+                f"淘宝详情页: {taobao_url}",
+                f"支付宝交易号: {alipay_trade_no or '先从淘宝详情页提取'}",
+                f"支付宝详情页: {alipay_url or '提取支付宝交易号后生成'}",
                 "",
                 "需要放入:",
                 f"1. 淘宝订单详情截图: {order_file}",
-                f"2. 支付宝付款记录截图: {payment_file}",
-                f"3. 可选合成凭证: {combined_file}",
+                "2. 从淘宝详情页提取字段: 支付宝交易号",
+                f"3. 打开支付宝详情页并截图: {payment_file}",
+                f"4. 可选合成凭证: {combined_file}",
             ]
         ),
         encoding="utf-8",
@@ -115,6 +133,9 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
     headers = [
         "No.",
         "Order No.",
+        "Taobao Detail URL",
+        "Alipay Trade No.",
+        "Alipay Detail URL",
         "Date",
         "Shop",
         "Item Label",
@@ -138,6 +159,9 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
             [
                 record["index"],
                 order["order_no"],
+                order.get("taobao_order_detail_url") or "",
+                order.get("alipay_trade_no") or "",
+                alipay_detail_url(order),
                 order["date"],
                 order["shop"],
                 order["item_label"],
@@ -153,9 +177,17 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
             ]
         )
         if first_link:
-            worksheet.cell(worksheet.max_row, 14).hyperlink = first_link
-            worksheet.cell(worksheet.max_row, 14).style = "Hyperlink"
-    style_worksheet(worksheet, [6, 24, 12, 22, 40, 12, 10, 72, 42, 42, 18, 18, 18, 50])
+            worksheet.cell(worksheet.max_row, 17).hyperlink = first_link
+            worksheet.cell(worksheet.max_row, 17).style = "Hyperlink"
+        taobao_url = order.get("taobao_order_detail_url") or ""
+        if taobao_url:
+            worksheet.cell(worksheet.max_row, 3).hyperlink = taobao_url
+            worksheet.cell(worksheet.max_row, 3).style = "Hyperlink"
+        payment_url = alipay_detail_url(order)
+        if payment_url:
+            worksheet.cell(worksheet.max_row, 5).hyperlink = payment_url
+            worksheet.cell(worksheet.max_row, 5).style = "Hyperlink"
+    style_worksheet(worksheet, [6, 24, 70, 30, 80, 12, 22, 40, 12, 10, 72, 42, 42, 18, 18, 18, 50])
 
     items = workbook.create_sheet("items")
     items.append(["Order No.", "Order Index", "Item Name", "Style", "Quantity", "Item Amount RMB", "Product Link"])
@@ -191,8 +223,9 @@ def write_capture_queue(path: Path, batch_folder: Path, records: list[dict[str, 
         "For each order, capture:",
         "",
         "1. Taobao order detail screenshot showing order number, items, shop, date, and paid amount.",
-        "2. Alipay payment record screenshot showing date/time, merchant/order reference, and amount.",
-        "3. Optional combined receipt image after pasting the narrow payment record into the order screenshot.",
+        "2. Extract the Alipay trade number from the Taobao order detail page. Prefer the field labelled `支付宝交易号`.",
+        "3. Open `https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo=<支付宝交易号>` directly and capture the payment record screenshot.",
+        "4. Optional combined receipt image after pasting the narrow payment record into the order screenshot.",
         "",
     ]
     for record in records:
@@ -206,6 +239,9 @@ def write_capture_queue(path: Path, batch_folder: Path, records: list[dict[str, 
                 f"- Amount: RMB {order['amount_rmb']}",
                 f"- Item label: {order['item_label']}",
                 f"- Folder: `{record['folder']}`",
+                f"- Taobao detail URL: {order.get('taobao_order_detail_url') or ''}",
+                f"- Alipay trade no: {order.get('alipay_trade_no') or '(extract from Taobao detail page)'}",
+                f"- Alipay detail URL: {alipay_detail_url(order) or '(generated after extraction)'}",
                 f"- Save Taobao screenshot as: `{record['order_file']}`",
                 f"- Save payment screenshot as: `{record['payment_file']}`",
                 f"- Optional combined image: `{record['combined_file']}`",
