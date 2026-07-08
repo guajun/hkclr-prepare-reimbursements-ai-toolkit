@@ -417,6 +417,27 @@ def copy_row_style(worksheet: Any, source_row: int, target_row: int, max_column:
         target.protection = copy.copy(source.protection)
 
 
+def insert_rows_preserving_merged_cells(worksheet: Any, row: int, count: int) -> None:
+    merged_ranges = list(worksheet.merged_cells.ranges)
+    for merged_range in merged_ranges:
+        worksheet.unmerge_cells(str(merged_range))
+
+    worksheet.insert_rows(row, count)
+
+    for merged_range in merged_ranges:
+        min_row = merged_range.min_row
+        max_row = merged_range.max_row
+        if min_row >= row:
+            min_row += count
+            max_row += count
+        worksheet.merge_cells(
+            start_row=min_row,
+            start_column=merged_range.min_col,
+            end_row=max_row,
+            end_column=merged_range.max_col,
+        )
+
+
 def locate_row(worksheet: Any, text: str, column: int = 1) -> int:
     for row in range(1, worksheet.max_row + 1):
         value = worksheet.cell(row, column).value
@@ -528,7 +549,7 @@ def write_reimbursement_workbook(
     needed_rows = max(0, len(orders) - available_rows)
 
     if needed_rows:
-        worksheet.insert_rows(total_row, needed_rows)
+        insert_rows_preserving_merged_cells(worksheet, total_row, needed_rows)
         for row in range(total_row, total_row + needed_rows):
             copy_row_style(worksheet, total_row - 1, row)
         total_row += needed_rows
