@@ -15,6 +15,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 ALIPAY_DETAIL_URL = "https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo={trade_no}"
+MIN_PAYMENT_SCREENSHOT_WIDTH = 800
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -27,6 +28,63 @@ def existing_any(folder: Path, patterns: list[str]) -> list[Path]:
     for pattern in patterns:
         hits.extend(folder.glob(pattern))
     return sorted(set(hits), key=lambda path: path.name)
+
+
+def image_size(path: Path) -> tuple[int, int] | None:
+    try:
+        with path.open("rb") as handle:
+            header = handle.read(24)
+            if header.startswith(b"\x89PNG\r\n\x1a\n") and len(header) >= 24:
+                width = int.from_bytes(header[16:20], "big")
+                height = int.from_bytes(header[20:24], "big")
+                return width, height
+
+            if header[:2] != b"\xff\xd8":
+                return None
+
+            handle.seek(2)
+            while True:
+                marker_start = handle.read(1)
+                while marker_start and marker_start != b"\xff":
+                    marker_start = handle.read(1)
+                marker = handle.read(1)
+                while marker == b"\xff":
+                    marker = handle.read(1)
+                if not marker:
+                    return None
+                marker_value = marker[0]
+                if marker_value in {0xD8, 0xD9}:
+                    continue
+                length_bytes = handle.read(2)
+                if len(length_bytes) != 2:
+                    return None
+                length = int.from_bytes(length_bytes, "big")
+                if length < 2:
+                    return None
+                if marker_value in {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}:
+                    frame = handle.read(5)
+                    if len(frame) != 5:
+                        return None
+                    height = int.from_bytes(frame[1:3], "big")
+                    width = int.from_bytes(frame[3:5], "big")
+                    return width, height
+                handle.seek(length - 2, 1)
+    except OSError:
+        return None
+
+
+def payment_screenshot_warnings(paths: list[Path]) -> list[str]:
+    warnings: list[str] = []
+    for path in paths:
+        size = image_size(path)
+        if not size:
+            continue
+        width, _height = size
+        if width < MIN_PAYMENT_SCREENSHOT_WIDTH:
+            warnings.append(
+                f"{path.name}: width {width}px; verify the right-side '= 实付金额' amount and payment method are not cropped"
+            )
+    return warnings
 
 
 def make_order_folder(evidence_root: Path, index: int, order_no: str) -> Path:
@@ -69,6 +127,8 @@ def write_folder_note(folder: Path, order: dict[str, Any], index: int) -> tuple[
                 f"1. 淘宝订单详情截图: {order_file}",
                 "2. 从淘宝详情页提取字段: 支付宝交易号",
                 f"3. 打开支付宝详情页并截图: {payment_file}",
+                "   验收: 付款图必须显示交易成功、流水号、时间、订单金额、= 实付金额、实付金额数字和付款方式。",
+                "   如浏览器截图出现重复平铺，保留原图备份后按实际内容边界裁剪，不要机械按半宽裁。",
                 f"4. 可选合成凭证: {combined_file}",
             ]
         ),
@@ -107,6 +167,7 @@ def build_records(orders: list[dict[str, Any]], evidence_root: Path) -> list[dic
                 "combined_file": combined_file,
                 "order_hits": [path.name for path in order_hits],
                 "payment_hits": [path.name for path in payment_hits],
+                "payment_image_warnings": payment_screenshot_warnings(payment_hits),
                 "combined_hits": [path.name for path in combined_hits],
             }
         )
@@ -146,6 +207,7 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
         "Payment Screenshot Filename",
         "Order Screenshot Found",
         "Payment Screenshot Found",
+        "Payment Screenshot Check",
         "Combined Receipt Found",
         "First Item Link",
     ]
@@ -172,13 +234,14 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
                 record["payment_file"],
                 "YES" if record["order_hits"] else "NO",
                 "YES" if record["payment_hits"] else "NO",
+                "; ".join(record["payment_image_warnings"]),
                 "YES" if record["combined_hits"] else "NO",
                 first_link,
             ]
         )
         if first_link:
-            worksheet.cell(worksheet.max_row, 17).hyperlink = first_link
-            worksheet.cell(worksheet.max_row, 17).style = "Hyperlink"
+            worksheet.cell(worksheet.max_row, 18).hyperlink = first_link
+            worksheet.cell(worksheet.max_row, 18).style = "Hyperlink"
         taobao_url = order.get("taobao_order_detail_url") or ""
         if taobao_url:
             worksheet.cell(worksheet.max_row, 3).hyperlink = taobao_url
@@ -187,7 +250,7 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
         if payment_url:
             worksheet.cell(worksheet.max_row, 5).hyperlink = payment_url
             worksheet.cell(worksheet.max_row, 5).style = "Hyperlink"
-    style_worksheet(worksheet, [6, 24, 70, 30, 80, 12, 22, 40, 12, 10, 72, 42, 42, 18, 18, 18, 50])
+    style_worksheet(worksheet, [6, 24, 70, 30, 80, 12, 22, 40, 12, 10, 72, 42, 42, 18, 18, 34, 18, 50])
 
     items = workbook.create_sheet("items")
     items.append(["Order No.", "Order Index", "Item Name", "Style", "Quantity", "Item Amount RMB", "Product Link"])
@@ -225,7 +288,8 @@ def write_capture_queue(path: Path, batch_folder: Path, records: list[dict[str, 
         "1. Taobao order detail screenshot showing order number, items, shop, date, and paid amount.",
         "2. Extract the Alipay trade number from the Taobao order detail page. Prefer the field labelled `支付宝交易号`.",
         "3. Open `https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo=<支付宝交易号>` directly and capture the payment record screenshot.",
-        "4. Optional combined receipt image after pasting the narrow payment record into the order screenshot.",
+        "4. Reopen or inspect the saved payment screenshot before accepting it. It must include `交易成功`, product or counterparty, `流水号`, time, `订单金额`, `= 实付金额`, final paid amount, and payment method. If the browser screenshot is tiled or duplicated, keep the raw file and crop to the real content boundary; do not crop by exact half width unless the right-side paid amount remains visible.",
+        "5. Optional combined receipt image after pasting the narrow payment record into the order screenshot.",
         "",
     ]
     for record in records:
@@ -288,6 +352,11 @@ def main() -> int:
         "orders": len(records),
         "order_screenshots_found": sum(1 for record in records if record["order_hits"]),
         "payment_screenshots_found": sum(1 for record in records if record["payment_hits"]),
+        "payment_screenshot_warnings": [
+            {"folder": str(record["folder"]), "warnings": record["payment_image_warnings"]}
+            for record in records
+            if record["payment_image_warnings"]
+        ],
         "combined_receipts_found": sum(1 for record in records if record["combined_hits"]),
         "checklist": str(checklist_path),
         "queue": str(queue_path),

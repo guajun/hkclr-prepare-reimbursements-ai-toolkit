@@ -84,6 +84,12 @@ Evidence required for Taobao normal reimbursement:
 - `taobao_order_detail_screenshot`
 - `payment_record_screenshot`
 
+Payment-record screenshot acceptance:
+
+- The saved Alipay detail screenshot must show `交易成功`, product or counterparty, `流水号`, time, `订单金额`, `= 实付金额`, the final paid amount, and the payment method.
+- Browser screenshots may occasionally be tiled or duplicated. Keep the raw image in a backup folder, then crop to the actual content boundary. Do not crop mechanically by half width unless the right-side `= 实付金额` column remains visible.
+- Treat very narrow desktop Alipay screenshots as suspect; rerun `scripts/prepare_taobao_evidence.py` and review any `payment_screenshot_warnings`.
+
 ## Taobao To Alipay Evidence Route
 
 Use the Taobao order detail page as the source of the Alipay transaction id:
