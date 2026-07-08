@@ -16,6 +16,7 @@ from openpyxl.utils import get_column_letter
 
 ALIPAY_DETAIL_URL = "https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo={trade_no}"
 MIN_PAYMENT_SCREENSHOT_WIDTH = 800
+APPROVED_PAYMENT_SCREENSHOT_SIZES = {(820, 777), (911, 777), (1425, 801)}
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -79,10 +80,15 @@ def payment_screenshot_warnings(paths: list[Path]) -> list[str]:
         size = image_size(path)
         if not size:
             continue
-        width, _height = size
+        width, height = size
         if width < MIN_PAYMENT_SCREENSHOT_WIDTH:
             warnings.append(
                 f"{path.name}: width {width}px; verify the right-side '= 实付金额' amount and payment method are not cropped"
+            )
+        if (width, height) not in APPROVED_PAYMENT_SCREENSHOT_SIZES:
+            approved = ", ".join(f"{approved_width}x{approved_height}" for approved_width, approved_height in sorted(APPROVED_PAYMENT_SCREENSHOT_SIZES))
+            warnings.append(
+                f"{path.name}: size {width}x{height}px is not an approved Alipay screenshot preset ({approved}); rerun normalization or inspect manually"
             )
     return warnings
 
@@ -128,7 +134,7 @@ def write_folder_note(folder: Path, order: dict[str, Any], index: int) -> tuple[
                 "2. 从淘宝详情页提取字段: 支付宝交易号",
                 f"3. 打开支付宝详情页并截图: {payment_file}",
                 "   验收: 付款图必须显示交易成功、流水号、时间、订单金额、= 实付金额、实付金额数字和付款方式。",
-                "   如浏览器截图出现重复平铺，保留原图备份后按实际内容边界裁剪，不要机械按半宽裁。",
+                "   如浏览器截图出现重复平铺，先保存到 _raw_payment_screenshots，再运行 normalize_alipay_payment_screenshots.py；不要临场手裁。",
                 f"4. 可选合成凭证: {combined_file}",
             ]
         ),
@@ -288,7 +294,7 @@ def write_capture_queue(path: Path, batch_folder: Path, records: list[dict[str, 
         "1. Taobao order detail screenshot showing order number, items, shop, date, and paid amount.",
         "2. Extract the Alipay trade number from the Taobao order detail page. Prefer the field labelled `支付宝交易号`.",
         "3. Open `https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo=<支付宝交易号>` directly and capture the payment record screenshot.",
-        "4. Reopen or inspect the saved payment screenshot before accepting it. It must include `交易成功`, product or counterparty, `流水号`, time, `订单金额`, `= 实付金额`, final paid amount, and payment method. If the browser screenshot is tiled or duplicated, keep the raw file and crop to the real content boundary; do not crop by exact half width unless the right-side paid amount remains visible.",
+        "4. Save the raw browser screenshot under `_raw_payment_screenshots`, then run `scripts/normalize_alipay_payment_screenshots.py`. Accept only approved preset outputs and inspect the contact sheet before continuing.",
         "5. Optional combined receipt image after pasting the narrow payment record into the order screenshot.",
         "",
     ]

@@ -87,8 +87,34 @@ Evidence required for Taobao normal reimbursement:
 Payment-record screenshot acceptance:
 
 - The saved Alipay detail screenshot must show `交易成功`, product or counterparty, `流水号`, time, `订单金额`, `= 实付金额`, the final paid amount, and the payment method.
-- Browser screenshots may occasionally be tiled or duplicated. Keep the raw image in a backup folder, then crop to the actual content boundary. Do not crop mechanically by half width unless the right-side `= 实付金额` column remains visible.
+- Browser screenshots may be tiled or duplicated. Never accept these raw images as final evidence. Save raw images under `_raw_payment_screenshots`, then normalize them with `scripts/normalize_alipay_payment_screenshots.py`.
+- Approved normalized Alipay final sizes are `820x777`, `911x777`, and `1425x801`. Other dimensions must trigger review unless the preset script has been deliberately updated from a newly inspected good sample.
 - Treat very narrow desktop Alipay screenshots as suspect; rerun `scripts/prepare_taobao_evidence.py` and review any `payment_screenshot_warnings`.
+
+## Alipay Screenshot Preset
+
+Use a fixed browser-rendering and screenshot preset for Alipay detail pages.
+
+Browser capture preset:
+
+- Open a fresh dedicated in-app browser tab after the user has logged in to Alipay.
+- Open the exact `alipay_detail_url`; do not search the Alipay bill list when an `alipay_trade_no` exists.
+- Before saving the first raw screenshot, verify the page DOM contains `交易成功`, `流水号`, `订单金额`, and `= 实付金额`.
+- Use the viewport screenshot call (`tab.screenshot({})`) for raw captures. Do not mix `fullPage`, clipped screenshots, viewport resizing, or different tabs within the same batch unless recalibrating from a new inspected sample.
+- Save raw files as `<NN>_<order_no>_payment_record.png` inside each order folder's `_raw_payment_screenshots` directory.
+- Normalize raw files with:
+
+```powershell
+uv run python scripts\normalize_alipay_payment_screenshots.py --folder "<batch-folder>" --start <first> --end <last> --contact-sheet
+```
+
+Known-good raw-to-final presets:
+
+- Raw about `2851x1603` -> crop top-left `1425x801`.
+- Raw about `1822x1554` -> crop top-left `911x777`.
+- Raw about `1485x1554` -> crop top-left `820x777`.
+
+If the first raw screenshot does not match one of these raw sizes, stop before batch capture. Inspect the raw screenshot, create a new deliberate preset from a known-good final image, update the normalization script, then continue.
 
 ## Taobao To Alipay Evidence Route
 
@@ -98,7 +124,8 @@ Use the Taobao order detail page as the source of the Alipay transaction id:
 2. Save the Taobao order-detail screenshot.
 3. Extract the value labelled `支付宝交易号`; store it as `alipay_trade_no`.
 4. Build `alipay_detail_url` as `https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo=<alipay_trade_no>`.
-5. Open `alipay_detail_url` directly and save the Alipay payment-record screenshot.
+5. Open `alipay_detail_url` directly and save the raw Alipay payment-record screenshot.
+6. Normalize the raw screenshot through the Alipay screenshot preset and inspect the contact sheet before accepting final evidence.
 
 Only use Alipay bill-list amount/date filtering as a fallback when the Taobao detail page does not expose `支付宝交易号`. Do not rely on amount-only matching when a transaction id is available.
 
