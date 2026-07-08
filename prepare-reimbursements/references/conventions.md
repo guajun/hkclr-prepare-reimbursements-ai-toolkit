@@ -97,10 +97,12 @@ Use a fixed browser-rendering and screenshot preset for Alipay detail pages.
 
 Browser capture preset:
 
-- Open a fresh dedicated in-app browser tab after the user has logged in to Alipay.
+- Use one dedicated in-app browser tab after the user has logged in to Alipay. Keep that tab alive for the whole batch; do not close, finalize, or replace it between orders unless Alipay itself expires the session.
 - Open the exact `alipay_detail_url`; do not search the Alipay bill list when an `alipay_trade_no` exists.
 - Before saving the first raw screenshot, verify the page DOM contains `交易成功`, `流水号`, `订单金额`, and `= 实付金额`.
 - Use the viewport screenshot call (`tab.screenshot({})`) for raw captures. Do not mix `fullPage`, clipped screenshots, viewport resizing, or different tabs within the same batch unless recalibrating from a new inspected sample.
+- Raw screenshots from the in-app browser may be JPEG bytes even when saved with a `.png` filename; normalize by opening the image bytes with Pillow rather than assuming the extension.
+- Do not treat the in-app browser viewport override as equivalent to opening a real 1920x1080 desktop browser window. On the current Windows/Codex setup, forcing `1920x1080` produced an abnormal `4276x2404` 2x2 tiled screenshot. This is a screenshot-backend failure, not a valid preset. Stop the batch if this shape appears.
 - Save raw files as `<NN>_<order_no>_payment_record.png` inside each order folder's `_raw_payment_screenshots` directory.
 - Normalize raw files with:
 
@@ -115,6 +117,8 @@ Known-good raw-to-final presets:
 - Raw about `1485x1554` -> crop top-left `820x777`.
 
 If the first raw screenshot does not match one of these raw sizes, stop before batch capture. Inspect the raw screenshot, create a new deliberate preset from a known-good final image, update the normalization script, then continue.
+
+For new batches, prefer a real browser capture engine when the user needs normal full-window screenshots. A real browser engine means a visible Chrome/Edge/Chromium session with a persistent user profile, a genuine `1920x1080` viewport/window, and browser-native screenshot output that is not tiled. The human user scans or completes Alipay login once in that browser; the agent reuses the same live session for the batch without reading cookies or session stores.
 
 ## Taobao To Alipay Evidence Route
 

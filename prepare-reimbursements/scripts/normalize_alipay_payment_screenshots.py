@@ -28,12 +28,18 @@ class ScreenshotProfile:
     crop_width: int
     crop_height: int
     note: str
+    final_width: int | None = None
+    final_height: int | None = None
 
     def matches(self, width: int, height: int) -> bool:
         return (
             self.raw_width_min <= width <= self.raw_width_max
             and self.raw_height_min <= height <= self.raw_height_max
         )
+
+    @property
+    def final_size(self) -> tuple[int, int]:
+        return (self.final_width or self.crop_width, self.final_height or self.crop_height)
 
 
 KNOWN_PROFILES = [
@@ -70,6 +76,15 @@ KNOWN_PROFILES = [
 ]
 
 
+KNOWN_BAD_IAB_VIEWPORT_RANGES = [
+    {
+        "raw_width": (4200, 4350),
+        "raw_height": (2350, 2450),
+        "warning": "Codex in-app browser viewport override produced a 2x2 tiled capture around 4276x2404. Do not normalize this as final evidence; use a real browser capture engine or recalibrate after the screenshot backend is fixed.",
+    },
+]
+
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -80,6 +95,19 @@ def choose_profile(width: int, height: int) -> ScreenshotProfile | None:
         if profile.matches(width, height):
             return profile
     return None
+
+
+def known_bad_iab_warning(width: int, height: int) -> str:
+    for item in KNOWN_BAD_IAB_VIEWPORT_RANGES:
+        width_min, width_max = item["raw_width"]
+        height_min, height_max = item["raw_height"]
+        if width_min <= width <= width_max and height_min <= height <= height_max:
+            return str(item["warning"])
+    return ""
+
+
+def lanczos_resampling() -> int:
+    return getattr(Image, "Resampling", Image).LANCZOS
 
 
 def load_manifest(batch_folder: Path, manifest_path: Path | None) -> list[dict[str, Any]]:
@@ -151,6 +179,12 @@ def normalize_one(
             record["status"] = "copied"
             return record
 
+        bad_warning = known_bad_iab_warning(width, height)
+        if bad_warning:
+            record["status"] = "known_bad_iab_viewport_capture"
+            record["warning"] = bad_warning
+            return record
+
         profile = choose_profile(width, height)
         if profile is None:
             record["status"] = "unrecognized_raw_size"
@@ -159,7 +193,9 @@ def normalize_one(
 
         record["profile"] = profile.name
         record["profile_note"] = profile.note
-        record["final_size"] = [profile.crop_width, profile.crop_height]
+        final_width, final_height = profile.final_size
+        record["crop_size"] = [profile.crop_width, profile.crop_height]
+        record["final_size"] = [final_width, final_height]
         if not dry_run:
             out_path.parent.mkdir(parents=True, exist_ok=True)
             if backup_existing and out_path.exists() and out_path.resolve() != raw_path.resolve():
@@ -168,6 +204,8 @@ def normalize_one(
                 shutil.copy2(out_path, backup_path)
                 record["backup_path"] = str(backup_path)
             cropped = image.crop((0, 0, profile.crop_width, profile.crop_height))
+            if cropped.size != (final_width, final_height):
+                cropped = cropped.resize((final_width, final_height), lanczos_resampling())
             cropped.save(out_path)
         record["status"] = "normalized"
         return record
@@ -215,9 +253,15 @@ def write_preset_file(path: Path) -> None:
         "schema": "prepare-reimbursements.alipay-screenshot-preset.v1",
         "browser_capture_preset": {
             "browser": "Codex in-app browser",
-            "tab": "fresh dedicated logged-in Alipay detail tab",
+            "tab": "single dedicated logged-in Alipay detail tab kept alive for the batch",
             "capture_call": "tab.screenshot({})",
-            "avoid": ["fullPage screenshots", "mid-batch viewport resizing", "accepting raw tiled images as final evidence"],
+            "avoid": [
+                "fullPage screenshots",
+                "mid-batch viewport resizing",
+                "opening new Alipay tabs after login",
+                "closing or finalizing the live Alipay tab before the batch is complete",
+                "accepting raw tiled images as final evidence",
+            ],
             "preflight": [
                 "Open one alipay_detail_url directly.",
                 "Confirm DOM contains 交易成功, 流水号, 订单金额, = 实付金额.",
@@ -232,6 +276,7 @@ def write_preset_file(path: Path) -> None:
                 "raw_width": [profile.raw_width_min, profile.raw_width_max],
                 "raw_height": [profile.raw_height_min, profile.raw_height_max],
                 "crop": [0, 0, profile.crop_width, profile.crop_height],
+                "final_size": list(profile.final_size),
                 "note": profile.note,
             }
             for profile in KNOWN_PROFILES
@@ -302,12 +347,23 @@ def main() -> int:
             for record in records
             if record.get("status") == "unrecognized_raw_size"
         ],
+        "known_bad_iab_viewport_capture": [
+            {
+                "index": record["index"],
+                "order_no": record["order_no"],
+                "raw_size": record.get("raw_size"),
+                "raw_path": record.get("raw_path"),
+                "warning": record.get("warning"),
+            }
+            for record in records
+            if record.get("status") == "known_bad_iab_viewport_capture"
+        ],
         "records": records,
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-    return 1 if summary["unrecognized_raw_size"] else 0
+    return 1 if summary["unrecognized_raw_size"] or summary["known_bad_iab_viewport_capture"] else 0
 
 
 if __name__ == "__main__":
