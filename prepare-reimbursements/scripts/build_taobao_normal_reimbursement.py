@@ -362,16 +362,44 @@ def find_reimbursement_root(folder: Path) -> Path:
     return folder.parent
 
 
+def is_template_candidate(path: Path, batch_folder: Path) -> bool:
+    if not path.is_file():
+        return False
+    resolved = path.resolve()
+    if resolved.is_relative_to(batch_folder):
+        return False
+    if any(part.lower() == "generated" for part in resolved.parts):
+        return False
+    if ".before-format-restore" in path.name:
+        return False
+    return True
+
+
+def can_read_template(path: Path) -> bool:
+    try:
+        with path.open("rb") as handle:
+            handle.read(1)
+        return True
+    except OSError:
+        return False
+
+
 def find_template(folder: Path) -> Path:
     root = find_reimbursement_root(folder)
+    batch_folder = folder.resolve()
     candidates = [
         path
         for path in root.rglob("報銷清單_Reimbursement list*.xlsx")
-        if path.is_file() and folder.resolve() not in [path.parent.resolve()]
+        if is_template_candidate(path, batch_folder)
     ]
-    if not candidates:
+    for candidate in sorted(candidates, key=lambda item: item.stat().st_mtime, reverse=True):
+        if can_read_template(candidate):
+            return candidate
+        print(f"warning: skipping locked template {candidate}")
+    if candidates:
+        raise FileNotFoundError("All previous normal reimbursement workbook templates are locked")
+    else:
         raise FileNotFoundError("No previous normal reimbursement workbook template found")
-    return max(candidates, key=lambda item: item.stat().st_mtime)
 
 
 def copy_row_style(worksheet: Any, source_row: int, target_row: int, max_column: int = 8) -> None:
@@ -553,10 +581,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--template", type=Path, help="Previous normal reimbursement workbook to use as template")
     parser.add_argument("--submission-date", default=date.today().isoformat(), help="YYYY-MM-DD date for output filename and signature")
     parser.add_argument("--include-status", default="交易成功", help="Only include orders with this status; blank includes all statuses")
-    parser.add_argument("--name", default="Applicant Name")
-    parser.add_argument("--bank", default="Bank Name")
-    parser.add_argument("--account", default="Bank Account Number")
-    parser.add_argument("--leader", default="Leader Name")
+    parser.add_argument("--name", default="Li Gaoyang")
+    parser.add_argument("--bank", default="HSBC")
+    parser.add_argument("--account", default="592-251326-833")
+    parser.add_argument("--leader", default="Chen Wei")
     return parser.parse_args()
 
 
