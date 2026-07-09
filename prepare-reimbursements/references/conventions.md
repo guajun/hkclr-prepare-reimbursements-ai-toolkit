@@ -101,7 +101,7 @@ Payment-record screenshot acceptance:
 
 - The saved Alipay detail screenshot must show `交易成功`, product or counterparty, `流水号`, time, `订单金额`, `= 实付金额`, the final paid amount, and the payment method.
 - Browser screenshots may be tiled or duplicated. Never accept these raw images as final evidence. Save raw images under `_raw_payment_screenshots`, then normalize them with `scripts/normalize_alipay_payment_screenshots.py`.
-- Approved normalized Alipay final sizes are `820x777`, `911x777`, and `1425x801`. Other dimensions must trigger review unless the preset script has been deliberately updated from a newly inspected good sample.
+- Approved normalized Alipay final sizes are `820x777`, `911x777`, `1425x801`, `1521x633`, `1521x688`, and `1536x639`. Other dimensions must trigger review unless the preset script has been deliberately updated from a newly inspected good sample.
 - Treat very narrow desktop Alipay screenshots as suspect; rerun `scripts/prepare_taobao_evidence.py` and review any `payment_screenshot_warnings`.
 
 ## Alipay Screenshot Preset
@@ -126,6 +126,7 @@ uv run python scripts\normalize_alipay_payment_screenshots.py --folder "<batch-f
 Known-good raw-to-final presets:
 
 - Raw about `2400x1350` from VS Code browser with a `1920x1080` viewport at 1.25 device scale -> crop top-left `1425x801`.
+- Raw about `1521x633`, `1521x688`, or `1536x639` from a visible Chrome window through the Codex Chrome extension -> keep/copy as a single-frame Chrome screenshot.
 - Raw about `2851x1603` -> crop top-left `1425x801`.
 - Raw about `1822x1554` -> crop top-left `911x777`.
 - Raw about `1485x1554` -> crop top-left `820x777`.

@@ -12,13 +12,23 @@ from pathlib import Path
 from typing import Any
 
 import openpyxl
+from PIL import Image, ImageChops, ImageStat, UnidentifiedImageError
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 ALIPAY_DETAIL_URL = "https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo={trade_no}"
+MIN_ORDER_SCREENSHOT_WIDTH = 900
+MIN_ORDER_SCREENSHOT_HEIGHT = 500
 MIN_PAYMENT_SCREENSHOT_WIDTH = 800
-APPROVED_PAYMENT_SCREENSHOT_SIZES = {(820, 777), (911, 777), (1425, 801)}
+APPROVED_PAYMENT_SCREENSHOT_SIZES = {(820, 777), (911, 777), (1425, 801), (1521, 633), (1521, 688), (1536, 639)}
 PRINT_FLAT_ROOT = Path("generated") / "print-flat" / "taobao"
+KNOWN_BAD_TILED_RANGES = [
+    {
+        "width": (4200, 4350),
+        "height": (2350, 2450),
+        "warning": "known bad Codex in-app browser 2x2 tiled capture around 4276x2404",
+    },
+]
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -74,6 +84,68 @@ def image_size(path: Path) -> tuple[int, int] | None:
                 handle.seek(length - 2, 1)
     except OSError:
         return None
+
+
+def known_bad_tiled_warning(width: int, height: int) -> str:
+    for item in KNOWN_BAD_TILED_RANGES:
+        width_min, width_max = item["width"]
+        height_min, height_max = item["height"]
+        if width_min <= width <= width_max and height_min <= height <= height_max:
+            return str(item["warning"])
+    return ""
+
+
+def mean_difference(first: Image.Image, second: Image.Image) -> float:
+    sample_size = (160, 160)
+    left = first.convert("L").resize(sample_size)
+    right = second.convert("L").resize(sample_size)
+    diff = ImageChops.difference(left, right)
+    return float(ImageStat.Stat(diff).mean[0])
+
+
+def tiled_capture_warnings(path: Path) -> list[str]:
+    warnings: list[str] = []
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+            bad_warning = known_bad_tiled_warning(width, height)
+            if bad_warning:
+                warnings.append(f"{path.name}: {bad_warning}")
+
+            if width >= 1200 and height >= 1200:
+                half_width = width // 2
+                half_height = height // 2
+                top_left = image.crop((0, 0, half_width, half_height))
+                top_right = image.crop((half_width, 0, half_width * 2, half_height))
+                bottom_left = image.crop((0, half_height, half_width, half_height * 2))
+                if mean_difference(top_left, top_right) < 2.0 and mean_difference(top_left, bottom_left) < 2.0:
+                    warnings.append(f"{path.name}: looks like a duplicated 2x2 tiled browser screenshot")
+
+            if width >= 900 and height >= 1800:
+                band_height = min(700, height // 3)
+                first_band = image.crop((0, 0, width, band_height))
+                second_band = image.crop((0, band_height, width, band_height * 2))
+                if mean_difference(first_band, second_band) < 2.0:
+                    warnings.append(f"{path.name}: adjacent vertical bands look duplicated")
+    except (OSError, UnidentifiedImageError) as error:
+        warnings.append(f"{path.name}: could not inspect image quality: {error}")
+    return warnings
+
+
+def order_screenshot_warnings(paths: list[Path]) -> list[str]:
+    warnings: list[str] = []
+    for path in paths:
+        size = image_size(path)
+        if not size:
+            warnings.append(f"{path.name}: could not read image dimensions")
+            continue
+        width, height = size
+        if width < MIN_ORDER_SCREENSHOT_WIDTH or height < MIN_ORDER_SCREENSHOT_HEIGHT:
+            warnings.append(
+                f"{path.name}: size {width}x{height}px is too small for a reliable Taobao order-detail screenshot"
+            )
+        warnings.extend(tiled_capture_warnings(path))
+    return warnings
 
 
 def payment_screenshot_warnings(paths: list[Path]) -> list[str]:
@@ -175,6 +247,7 @@ def build_records(orders: list[dict[str, Any]], evidence_root: Path) -> list[dic
                 "combined_file": combined_file,
                 "order_hits": [path.name for path in order_hits],
                 "payment_hits": [path.name for path in payment_hits],
+                "order_image_warnings": order_screenshot_warnings(order_hits),
                 "payment_image_warnings": payment_screenshot_warnings(payment_hits),
                 "combined_hits": [path.name for path in combined_hits],
             }
@@ -214,6 +287,7 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
         "Taobao Order Screenshot Filename",
         "Payment Screenshot Filename",
         "Order Screenshot Found",
+        "Order Screenshot Check",
         "Payment Screenshot Found",
         "Payment Screenshot Check",
         "Combined Receipt Found",
@@ -240,16 +314,17 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
                 str(record["folder"]),
                 record["order_file"],
                 record["payment_file"],
-                "YES" if record["order_hits"] else "NO",
-                "YES" if record["payment_hits"] else "NO",
+                "YES" if record["order_hits"] and not record["order_image_warnings"] else "NO",
+                "; ".join(record["order_image_warnings"]),
+                "YES" if record["payment_hits"] and not record["payment_image_warnings"] else "NO",
                 "; ".join(record["payment_image_warnings"]),
                 "YES" if record["combined_hits"] else "NO",
                 first_link,
             ]
         )
         if first_link:
-            worksheet.cell(worksheet.max_row, 18).hyperlink = first_link
-            worksheet.cell(worksheet.max_row, 18).style = "Hyperlink"
+            worksheet.cell(worksheet.max_row, 19).hyperlink = first_link
+            worksheet.cell(worksheet.max_row, 19).style = "Hyperlink"
         taobao_url = order.get("taobao_order_detail_url") or ""
         if taobao_url:
             worksheet.cell(worksheet.max_row, 3).hyperlink = taobao_url
@@ -258,7 +333,7 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
         if payment_url:
             worksheet.cell(worksheet.max_row, 5).hyperlink = payment_url
             worksheet.cell(worksheet.max_row, 5).style = "Hyperlink"
-    style_worksheet(worksheet, [6, 24, 70, 30, 80, 12, 22, 40, 12, 10, 72, 42, 42, 18, 18, 34, 18, 50])
+    style_worksheet(worksheet, [6, 24, 70, 30, 80, 12, 22, 40, 12, 10, 72, 42, 42, 18, 34, 18, 34, 18, 50])
 
     items = workbook.create_sheet("items")
     items.append(["Order No.", "Order Index", "Item Name", "Style", "Quantity", "Item Amount RMB", "Product Link"])
@@ -420,8 +495,15 @@ def main() -> int:
     summary = {
         "evidence_root": str(evidence_root),
         "orders": len(records),
-        "order_screenshots_found": sum(1 for record in records if record["order_hits"]),
-        "payment_screenshots_found": sum(1 for record in records if record["payment_hits"]),
+        "order_screenshots_present": sum(1 for record in records if record["order_hits"]),
+        "order_screenshots_found": sum(1 for record in records if record["order_hits"] and not record["order_image_warnings"]),
+        "order_screenshot_warnings": [
+            {"folder": str(record["folder"]), "warnings": record["order_image_warnings"]}
+            for record in records
+            if record["order_image_warnings"]
+        ],
+        "payment_screenshots_present": sum(1 for record in records if record["payment_hits"]),
+        "payment_screenshots_found": sum(1 for record in records if record["payment_hits"] and not record["payment_image_warnings"]),
         "payment_screenshot_warnings": [
             {"folder": str(record["folder"]), "warnings": record["payment_image_warnings"]}
             for record in records
