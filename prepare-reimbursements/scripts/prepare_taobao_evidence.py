@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +17,8 @@ from openpyxl.utils import get_column_letter
 
 ALIPAY_DETAIL_URL = "https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo={trade_no}"
 MIN_PAYMENT_SCREENSHOT_WIDTH = 800
-APPROVED_PAYMENT_SCREENSHOT_SIZES = {(820, 777), (911, 777), (1425, 801)}
+APPROVED_PAYMENT_SCREENSHOT_SIZES = {(820, 777), (911, 777), (1425, 801), (1521, 633), (1521, 688), (1536, 639)}
+PRINT_FLAT_ROOT = Path("generated") / "print-flat" / "taobao"
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -327,11 +329,70 @@ def write_capture_queue(path: Path, batch_folder: Path, records: list[dict[str, 
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def reset_flat_folder(path: Path) -> list[str]:
+    warnings: list[str] = []
+    path.mkdir(parents=True, exist_ok=True)
+    for child in path.iterdir():
+        if child.is_file() or child.is_symlink():
+            child.unlink()
+        else:
+            warnings.append(f"Skipped non-file item in print-flat folder: {child}")
+    return warnings
+
+
+def link_print_file(source: Path, destination: Path) -> tuple[str, str]:
+    relative_source = os.path.relpath(source, destination.parent)
+    try:
+        destination.symlink_to(relative_source)
+        return "symlink", ""
+    except OSError as symlink_error:
+        try:
+            os.link(source, destination)
+            return "hardlink", f"Symlink failed for {destination.name}; created hardlink instead: {symlink_error}"
+        except OSError as hardlink_error:
+            return "missing", f"Could not create print-flat link for {source}: symlink error: {symlink_error}; hardlink error: {hardlink_error}"
+
+
+def write_print_flat_folder(path: Path, records: list[dict[str, Any]]) -> dict[str, Any]:
+    warnings = reset_flat_folder(path)
+    links: list[dict[str, Any]] = []
+    sequence = 1
+    for record in records:
+        order = record["order"]
+        printable_files = [
+            ("taobao_order_detail", record["folder"] / record["order_file"]),
+            ("payment_record", record["folder"] / record["payment_file"]),
+        ]
+        for label, source in printable_files:
+            if not source.exists():
+                warnings.append(f"Missing printable source for {record['index']:02d} {order['order_no']}: {source.name}")
+                continue
+            destination = path / f"{sequence:03d}_{record['index']:02d}_{order['order_no']}_{label}{source.suffix.lower()}"
+            link_type, warning = link_print_file(source, destination)
+            if warning:
+                warnings.append(warning)
+            if link_type != "missing":
+                links.append(
+                    {
+                        "sequence": sequence,
+                        "index": record["index"],
+                        "order_no": order["order_no"],
+                        "kind": label,
+                        "link_type": link_type,
+                        "path": str(destination),
+                        "target": str(source),
+                    }
+                )
+                sequence += 1
+    return {"folder": str(path), "links": links, "warnings": warnings}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--folder", type=Path, required=True, help="Reimbursement batch folder")
     parser.add_argument("--manifest", type=Path, help="Manifest path. Defaults to <folder>/generated/reimbursement-manifest.json")
     parser.add_argument("--evidence-root", type=Path, help="Evidence root. Defaults to <folder>/物品/taobao")
+    parser.add_argument("--no-print-flat", action="store_true", help="Do not refresh the generated/print-flat/taobao folder for bulk printing")
     return parser.parse_args()
 
 
@@ -352,6 +413,9 @@ def main() -> int:
 
     write_checklist(checklist_path, records)
     write_capture_queue(queue_path, batch_folder, records)
+    print_flat = None
+    if not args.no_print_flat:
+        print_flat = write_print_flat_folder(batch_folder / PRINT_FLAT_ROOT, records)
 
     summary = {
         "evidence_root": str(evidence_root),
@@ -367,6 +431,10 @@ def main() -> int:
         "checklist": str(checklist_path),
         "queue": str(queue_path),
     }
+    if print_flat:
+        summary["print_flat_folder"] = print_flat["folder"]
+        summary["print_flat_links"] = len(print_flat["links"])
+        summary["print_flat_warnings"] = print_flat["warnings"]
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0

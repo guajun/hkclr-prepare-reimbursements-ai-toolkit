@@ -18,10 +18,11 @@ description: Prepare reimbursement batches from local reimbursement folders, esp
 9. Before batch Alipay screenshots, calibrate the screenshot preset in `references/conventions.md`: use one logged-in Alipay detail tab, keep it alive for the batch, save one raw viewport screenshot, normalize it with `scripts/normalize_alipay_payment_screenshots.py`, and inspect the result. Reuse the same tab, browser shape, and screenshot call for the batch.
 10. Save Alipay raw screenshots under each order's `_raw_payment_screenshots` folder. Produce final payment screenshots only by running `scripts/normalize_alipay_payment_screenshots.py`; do not hand-crop or accept raw tiled screenshots as final evidence.
 11. Reopen or inspect the normalized Alipay payment screenshot before accepting it. It must show `交易成功`, product or counterparty, `流水号`, time, `订单金额`, `= 实付金额`, final paid amount, and payment method. If the raw screenshot does not match an approved preset, stop and recalibrate instead of guessing a crop.
-12. If the Codex in-app browser screenshot output is an abnormal 2x2 tiled image, especially around `4276x2404` after a forced `1920x1080` viewport override, stop the batch. Treat this as a browser screenshot backend failure and use a real browser capture engine instead of masking it with a crop.
-13. Search or filter the Alipay bill list only as a fallback when Taobao does not expose a usable `支付宝交易号`.
-14. For reimbursement-related live payment links or HTTP 402 payment responses, use the Alipay payment skills as a separate payment workflow, then return here to capture evidence and update the reimbursement packet.
-15. Do not automate login, 2FA, wallet binding, payment, or manual app-only flows without the user's explicit intent and active participation.
+12. Run `scripts/prepare_taobao_evidence.py` after final screenshots exist. It refreshes `generated/print-flat/taobao`, a flat all-screenshots print folder with sequential symlinks or hardlinks back to the per-order evidence files, so the user can select all and print while preserving one source of truth.
+13. If the Codex in-app browser screenshot output is an abnormal 2x2 tiled image, especially around `4276x2404` after a forced `1920x1080` viewport override, stop the batch. Treat this as a browser screenshot backend failure and use a real browser capture engine instead of masking it with a crop.
+14. Search or filter the Alipay bill list only as a fallback when Taobao does not expose a usable `支付宝交易号`.
+15. For reimbursement-related live payment links or HTTP 402 payment responses, use the Alipay payment skills as a separate payment workflow, then return here to capture evidence and update the reimbursement packet.
+16. Do not automate login, 2FA, wallet binding, payment, or manual app-only flows without the user's explicit intent and active participation.
 
 ## Human And Agent Boundary
 
@@ -79,6 +80,8 @@ After building the manifest and reimbursement workbook, prepare evidence folders
 ```powershell
 uv run python scripts\prepare_taobao_evidence.py --folder "<batch-folder>"
 ```
+
+This also refreshes `<batch-folder>\generated\print-flat\taobao`, a flat print folder containing sequential links to each Taobao order-detail screenshot and Alipay payment screenshot. Use it for select-all printing; keep the per-order evidence files as the source of truth.
 
 After browser automation captures Taobao order-detail pages and extracts Alipay trade numbers, merge the capture results into the manifest:
 

@@ -15,7 +15,7 @@ from typing import Any
 from PIL import Image, ImageDraw
 
 
-APPROVED_FINAL_SIZES = {(820, 777), (911, 777), (1425, 801)}
+APPROVED_FINAL_SIZES = {(820, 777), (911, 777), (1425, 801), (1521, 633), (1521, 688), (1536, 639)}
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,28 @@ class ScreenshotProfile:
 
 
 KNOWN_PROFILES = [
+    ScreenshotProfile(
+        name="alipay-vscode-browser-2400x1350-to-1425x801",
+        raw_width_min=2350,
+        raw_width_max=2450,
+        raw_height_min=1300,
+        raw_height_max=1400,
+        crop_width=1425,
+        crop_height=801,
+        note="VS Code browser detail tab, 1920x1080 viewport captured at 1.25 device scale, single-frame screenshot.",
+    ),
+    ScreenshotProfile(
+        name="alipay-chrome-extension-1521x688",
+        raw_width_min=1521,
+        raw_width_max=1545,
+        raw_height_min=688,
+        raw_height_max=710,
+        crop_width=1521,
+        crop_height=688,
+        final_width=1521,
+        final_height=688,
+        note="Visible Chrome window captured through the Codex Chrome extension, single-frame screenshot with the Alipay detail content centered.",
+    ),
     ScreenshotProfile(
         name="alipay-iab-wide-2851x1603-to-1425x801",
         raw_width_min=2700,
@@ -175,7 +197,10 @@ def normalize_one(
                     shutil.copy2(out_path, backup_path)
                     record["backup_path"] = str(backup_path)
                 if out_path.resolve() != raw_path.resolve():
-                    shutil.copy2(raw_path, out_path)
+                    if out_path.suffix.lower() == ".png":
+                        image.save(out_path)
+                    else:
+                        shutil.copy2(raw_path, out_path)
             record["status"] = "copied"
             return record
 
@@ -252,9 +277,9 @@ def write_preset_file(path: Path) -> None:
     payload = {
         "schema": "prepare-reimbursements.alipay-screenshot-preset.v1",
         "browser_capture_preset": {
-            "browser": "Codex in-app browser",
-            "tab": "single dedicated logged-in Alipay detail tab kept alive for the batch",
-            "capture_call": "tab.screenshot({})",
+            "browser": "Dedicated logged-in Alipay detail browser tab, including VS Code browser or previously approved in-app browser captures",
+            "tab": "single logged-in Alipay detail tab kept alive for the batch",
+            "capture_call": "viewport screenshot call, for example page.screenshot({ fullPage: false })",
             "avoid": [
                 "fullPage screenshots",
                 "mid-batch viewport resizing",
