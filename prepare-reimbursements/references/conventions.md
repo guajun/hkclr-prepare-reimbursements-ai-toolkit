@@ -90,6 +90,13 @@ Evidence required for Taobao normal reimbursement:
 - `taobao_order_detail_screenshot`
 - `payment_record_screenshot`
 
+Taobao order-detail screenshot acceptance:
+
+- In VS Code browser, use a CDP `Page.captureScreenshot` page-coordinate clip after setting the viewport and reloading the page. Resizing without reload leaves Taobao layout stale and can make DOM rects disagree with the rendered page.
+- The print-focused capture clips from page `x = 0`, from the top of `.logo--zP4dbtIP`, to the right and bottom edges of `#rightMainContentContainer`. It must show order status, shop or item details, paid amount, order number, payment method, and `支付宝交易号` without browser scrollbars or recommendation blocks.
+- For a complete left-column screenshot, `#mainContentContainer` may be used as the bottom boundary; the resulting right-bottom white space is expected because the left order column is taller than the right payment/order-info column.
+- Do not accept captures with repeated vertical chunks, clipped order/payment information, stale resize layout, browser scrollbars, recommendation blocks, or large right/bottom whitespace in print-focused mode.
+
 Payment-record screenshot acceptance:
 
 - The saved Alipay detail screenshot must show `交易成功`, product or counterparty, `流水号`, time, `订单金额`, `= 实付金额`, the final paid amount, and the payment method.
