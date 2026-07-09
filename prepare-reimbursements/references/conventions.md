@@ -123,6 +123,17 @@ uv run python scripts\compile_reimbursement_outputs.py --folder "<batch-folder>"
 
 The compiler reads orders, items, evidence paths, validation status, and artifact state from SQLite. It may still read source screenshot files to create print-flat links and calculate artifact hashes. It should not parse `订单数据*.xlsx`.
 
+## Evidence Quarantine
+
+Final screenshots with validation warnings must not count as complete evidence. Use:
+
+```powershell
+uv run python scripts\quarantine_invalid_evidence.py --folder "<batch-folder>"
+uv run python scripts\quarantine_invalid_evidence.py --folder "<batch-folder>" --apply
+```
+
+The first command is a dry run and writes `generated\evidence-quarantine-report.json`. The `--apply` command moves warned screenshots to `generated\quarantine\evidence\<timestamp>` while leaving missing evidence untouched. After quarantine, rerun evidence preparation and state sync so the summary and SQLite validation state show the screenshot as missing instead of accepted.
+
 Taobao order-detail screenshot acceptance:
 
 - In VS Code browser, use a CDP `Page.captureScreenshot` page-coordinate clip after setting the viewport and reloading the page. Resizing without reload leaves Taobao layout stale and can make DOM rects disagree with the rendered page.

@@ -48,6 +48,15 @@ uv run python scripts\compile_reimbursement_outputs.py --folder "<path-to-reimbu
 
 Use `--submission-date YYYY-MM-DD` when the workbook date should differ from today's date.
 
+If validation reports bad screenshots, quarantine them out of active evidence folders:
+
+```powershell
+uv run python scripts\quarantine_invalid_evidence.py --folder "<path-to-reimbursement-batch>"
+uv run python scripts\quarantine_invalid_evidence.py --folder "<path-to-reimbursement-batch>" --apply
+```
+
+The first command is a dry run. The second moves only screenshots that already have validation warnings.
+
 ## Known Issues
 
 ### Codex In-App Browser Screenshots

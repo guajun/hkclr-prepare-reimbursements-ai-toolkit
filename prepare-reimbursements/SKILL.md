@@ -21,10 +21,11 @@ description: Prepare reimbursement batches from local reimbursement folders, esp
 12. Run `scripts/prepare_taobao_evidence.py` after final screenshots exist. It refreshes `generated/print-flat/taobao`, a flat all-screenshots print folder with sequential symlinks or hardlinks back to the per-order evidence files, so the user can select all and print while preserving one source of truth.
 13. Sync the batch into SQLite with `scripts/sync_reimbursement_state.py`. The database records batches, orders, items, evidence files, validation results, and generated artifacts; the JSON snapshot is the review/diff format.
 14. To rebuild outputs after the DB exists, use `scripts/compile_reimbursement_outputs.py` instead of re-reading the edited Taobao export. This compiles the manifest, review workbook, reimbursement workbook, evidence checklist, capture queue, print-flat folder, and compile summary from SQLite plus source evidence files.
-15. If the Codex in-app browser screenshot output is an abnormal 2x2 tiled image, especially around `4276x2404` after a forced `1920x1080` viewport override, stop the batch. Treat this as a browser screenshot backend failure and use a real browser capture engine instead of masking it with a crop.
-16. Search or filter the Alipay bill list only as a fallback when Taobao does not expose a usable `支付宝交易号`.
-17. For reimbursement-related live payment links or HTTP 402 payment responses, use the Alipay payment skills as a separate payment workflow, then return here to capture evidence and update the reimbursement packet.
-18. Do not automate login, 2FA, wallet binding, payment, or manual app-only flows without the user's explicit intent and active participation.
+15. If screenshot validation reports bad final evidence, run `scripts/quarantine_invalid_evidence.py` first as a dry run, then with `--apply` only after confirming the target list. Re-run evidence preparation and state sync afterwards so quarantined images no longer count.
+16. If the Codex in-app browser screenshot output is an abnormal 2x2 tiled image, especially around `4276x2404` after a forced `1920x1080` viewport override, stop the batch. Treat this as a browser screenshot backend failure and use a real browser capture engine instead of masking it with a crop.
+17. Search or filter the Alipay bill list only as a fallback when Taobao does not expose a usable `支付宝交易号`.
+18. For reimbursement-related live payment links or HTTP 402 payment responses, use the Alipay payment skills as a separate payment workflow, then return here to capture evidence and update the reimbursement packet.
+19. Do not automate login, 2FA, wallet binding, payment, or manual app-only flows without the user's explicit intent and active participation.
 
 ## Human And Agent Boundary
 
@@ -155,6 +156,17 @@ uv run python scripts\compile_reimbursement_outputs.py --folder "<batch-folder>"
 ```
 
 This compiler regenerates the compatibility manifest, review workbook, reimbursement workbook, evidence checklist, capture queue, print-flat folder, and `reimbursement-state-compile-summary.json`, then updates the generated-artifacts table in SQLite. Run `scripts\sync_reimbursement_state.py` afterwards when you also want a fresh snapshot JSON.
+
+If validation warnings identify bad screenshots, preview and then apply quarantine:
+
+```powershell
+uv run python scripts\quarantine_invalid_evidence.py --folder "<batch-folder>"
+uv run python scripts\quarantine_invalid_evidence.py --folder "<batch-folder>" --apply
+uv run python scripts\prepare_taobao_evidence.py --folder "<batch-folder>"
+uv run python scripts\sync_reimbursement_state.py --folder "<batch-folder>"
+```
+
+Quarantine moves warned screenshot files to `<batch-folder>\generated\quarantine\evidence\<timestamp>` and writes `generated\evidence-quarantine-report.json`.
 
 After browser automation captures Taobao order-detail pages and extracts Alipay trade numbers, merge the capture results into the manifest:
 

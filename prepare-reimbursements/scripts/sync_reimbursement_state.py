@@ -122,6 +122,7 @@ def build_artifacts(batch_folder: Path, generated: Path, summary: dict[str, Any]
         "taobao_capture_queue": generated / "taobao-evidence-capture-queue.md",
         "taobao_evidence_summary": generated / "taobao-evidence-summary.json",
         "state_compile_summary": generated / "reimbursement-state-compile-summary.json",
+        "evidence_quarantine_report": generated / "evidence-quarantine-report.json",
         "alipay_normalize_report": generated / "alipay-payment-screenshot-normalize-report.json",
         "alipay_contact_sheet": generated / "alipay-payment-screenshot-contact-sheet.png",
     }
