@@ -90,6 +90,31 @@ Evidence required for Taobao normal reimbursement:
 - `taobao_order_detail_screenshot`
 - `payment_record_screenshot`
 
+## SQLite State Database
+
+`generated\reimbursement-state.sqlite3` is the transition source state for a batch. It is rebuilt or refreshed from the current manifest and evidence files by:
+
+```powershell
+uv run python scripts\sync_reimbursement_state.py --folder "<batch-folder>"
+```
+
+Schema v1 represents:
+
+- `batches`: batch folder, reimbursement type, source manifest/export, profile, and parsed summary.
+- `orders`: normalized reimbursable orders with Taobao and Alipay identifiers.
+- `order_items`: SKU/item rows attached to each order.
+- `evidence_files`: expected and actual screenshot files, file metadata, hashes, capture method, validation status, and warnings.
+- `validation_results`: per-order validation state from evidence preparation scripts.
+- `generated_artifacts`: manifests, workbooks, checklists, contact sheets, print folders, and other compiled outputs.
+
+`generated\reimbursement-state.snapshot.json` is the canonical review format for humans and agents. It should be stable enough to diff conceptually: orders are sorted by reimbursement index, item rows by item index, and evidence by kind. The snapshot may contain hashes and local relative paths; do not commit real batch snapshots to the public repo.
+
+The intended compiler model is:
+
+- source state: SQLite plus source screenshots/PDFs
+- compiled outputs: XLSX reimbursement workbooks, evidence checklists, capture queues, print-flat folders, contact sheets, and summary JSON
+- compatibility input during transition: `generated\reimbursement-manifest.json`
+
 Taobao order-detail screenshot acceptance:
 
 - In VS Code browser, use a CDP `Page.captureScreenshot` page-coordinate clip after setting the viewport and reloading the page. Resizing without reload leaves Taobao layout stale and can make DOM rects disagree with the rendered page.

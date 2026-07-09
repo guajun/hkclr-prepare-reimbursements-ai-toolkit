@@ -182,11 +182,17 @@ def alipay_detail_url(order: dict[str, Any]) -> str:
     return ""
 
 
+def expected_evidence_files(index: int, order_no: str) -> tuple[str, str, str]:
+    return (
+        f"{index:02d}_{order_no}_taobao_order_detail.png",
+        f"{index:02d}_{order_no}_payment_record.png",
+        f"{index:02d}_{order_no}_combined_receipt.png",
+    )
+
+
 def write_folder_note(folder: Path, order: dict[str, Any], index: int) -> tuple[str, str, str]:
     order_no = order["order_no"]
-    order_file = f"{index:02d}_{order_no}_taobao_order_detail.png"
-    payment_file = f"{index:02d}_{order_no}_payment_record.png"
-    combined_file = f"{index:02d}_{order_no}_combined_receipt.png"
+    order_file, payment_file, combined_file = expected_evidence_files(index, order_no)
     taobao_url = order.get("taobao_order_detail_url") or ""
     alipay_trade_no = order.get("alipay_trade_no") or ""
     alipay_url = alipay_detail_url(order)
@@ -217,11 +223,14 @@ def write_folder_note(folder: Path, order: dict[str, Any], index: int) -> tuple[
     return order_file, payment_file, combined_file
 
 
-def build_records(orders: list[dict[str, Any]], evidence_root: Path) -> list[dict[str, Any]]:
+def build_records(orders: list[dict[str, Any]], evidence_root: Path, write_notes: bool = True) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for index, order in enumerate(orders, 1):
         folder = make_order_folder(evidence_root, index, order["order_no"])
-        order_file, payment_file, combined_file = write_folder_note(folder, order, index)
+        if write_notes:
+            order_file, payment_file, combined_file = write_folder_note(folder, order, index)
+        else:
+            order_file, payment_file, combined_file = expected_evidence_files(index, order["order_no"])
         order_hits = [
             path
             for path in existing_any(folder, ["*order*.*", "*taobao*.*", "*淘宝*.*", "*订单*.*"])

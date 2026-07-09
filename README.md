@@ -7,6 +7,8 @@ The current workflow reads a dated reimbursement folder, applies the convention 
 - `reimbursement-manifest.json`
 - `reimbursement-review.xlsx`
 - `報銷清單_Reimbursement list <name> <date>.xlsx`
+- `reimbursement-state.sqlite3`
+- `reimbursement-state.snapshot.json`
 
 ## Layout
 
@@ -29,6 +31,14 @@ uv run python scripts\build_taobao_normal_reimbursement.py `
 ```
 
 The preferred edited Taobao export name is `订单数据-报销.xlsx`.
+
+After collecting and validating screenshots, sync the batch into SQLite state:
+
+```powershell
+uv run python scripts\sync_reimbursement_state.py --folder "<path-to-reimbursement-batch>"
+```
+
+The SQLite database is the transition source of truth for orders, items, evidence files, validation results, and generated artifacts. The JSON snapshot is deliberately review-friendly; use it to inspect state changes without opening SQLite.
 
 ## Known Issues
 

@@ -17,3 +17,6 @@ reimbursement-review.xlsx
 *.jpeg
 *.pdf
 *.docx
+*.sqlite
+*.sqlite3
+*.db
