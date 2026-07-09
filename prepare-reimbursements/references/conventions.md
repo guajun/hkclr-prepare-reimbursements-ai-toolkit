@@ -10,6 +10,12 @@ Normal reimbursement batches may contain Taobao exports, evidence screenshots, P
 
 `報銷清單_Reimbursement list <name> YYYY-MM-DD.xlsx`
 
+Generated print folders live under:
+
+`<batch-folder>\generated\print-flat\<source>`
+
+For Taobao, `generated\print-flat\taobao` should contain sequential symlinks or hardlinks to each order-detail screenshot and payment-record screenshot. This folder exists only for bulk select-all printing; the per-order evidence files remain the source of truth.
+
 Travel reimbursement batches may contain:
 
 - `差旅報銷清單_行程資料列表Reimbursement for travel expenses - <name>.xlsx`
@@ -112,6 +118,7 @@ uv run python scripts\normalize_alipay_payment_screenshots.py --folder "<batch-f
 
 Known-good raw-to-final presets:
 
+- Raw about `2400x1350` from VS Code browser with a `1920x1080` viewport at 1.25 device scale -> crop top-left `1425x801`.
 - Raw about `2851x1603` -> crop top-left `1425x801`.
 - Raw about `1822x1554` -> crop top-left `911x777`.
 - Raw about `1485x1554` -> crop top-left `820x777`.
