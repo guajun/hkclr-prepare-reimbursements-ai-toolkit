@@ -40,6 +40,14 @@ uv run python scripts\sync_reimbursement_state.py --folder "<path-to-reimburseme
 
 The SQLite database is the transition source of truth for orders, items, evidence files, validation results, and generated artifacts. The JSON snapshot is deliberately review-friendly; use it to inspect state changes without opening SQLite.
 
+To rebuild generated outputs from SQLite without re-reading the edited Taobao export:
+
+```powershell
+uv run python scripts\compile_reimbursement_outputs.py --folder "<path-to-reimbursement-batch>"
+```
+
+Use `--submission-date YYYY-MM-DD` when the workbook date should differ from today's date.
+
 ## Known Issues
 
 ### Codex In-App Browser Screenshots

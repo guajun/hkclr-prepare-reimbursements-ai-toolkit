@@ -115,6 +115,14 @@ The intended compiler model is:
 - compiled outputs: XLSX reimbursement workbooks, evidence checklists, capture queues, print-flat folders, contact sheets, and summary JSON
 - compatibility input during transition: `generated\reimbursement-manifest.json`
 
+After SQLite state exists, rebuild normal Taobao outputs without re-reading the edited Taobao export:
+
+```powershell
+uv run python scripts\compile_reimbursement_outputs.py --folder "<batch-folder>" --submission-date YYYY-MM-DD
+```
+
+The compiler reads orders, items, evidence paths, validation status, and artifact state from SQLite. It may still read source screenshot files to create print-flat links and calculate artifact hashes. It should not parse `订单数据*.xlsx`.
+
 Taobao order-detail screenshot acceptance:
 
 - In VS Code browser, use a CDP `Page.captureScreenshot` page-coordinate clip after setting the viewport and reloading the page. Resizing without reload leaves Taobao layout stale and can make DOM rects disagree with the rendered page.
