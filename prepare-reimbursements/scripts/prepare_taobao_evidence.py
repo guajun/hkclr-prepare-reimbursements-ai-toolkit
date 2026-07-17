@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ MIN_ORDER_SCREENSHOT_HEIGHT = 500
 MIN_PAYMENT_SCREENSHOT_WIDTH = 800
 APPROVED_PAYMENT_SCREENSHOT_SIZES = {(820, 777), (911, 777), (1425, 801), (1521, 633), (1521, 688), (1536, 639)}
 PRINT_FLAT_ROOT = Path("generated") / "print-flat" / "taobao"
+PRINT_FLAT_ALL_ROOT = Path("generated") / "print-flat" / "all"
 KNOWN_BAD_TILED_RANGES = [
     {
         "width": (4200, 4350),
@@ -432,9 +434,17 @@ def link_print_file(source: Path, destination: Path) -> tuple[str, str]:
     except OSError as symlink_error:
         try:
             os.link(source, destination)
-            return "hardlink", f"Symlink failed for {destination.name}; created hardlink instead: {symlink_error}"
+            return "hardlink", ""
         except OSError as hardlink_error:
-            return "missing", f"Could not create print-flat link for {source}: symlink error: {symlink_error}; hardlink error: {hardlink_error}"
+            try:
+                shutil.copy2(source, destination)
+                return "copy", ""
+            except OSError as copy_error:
+                return (
+                    "missing",
+                    f"Could not create print-flat file for {source}: symlink error: {symlink_error}; "
+                    f"hardlink error: {hardlink_error}; copy error: {copy_error}",
+                )
 
 
 def write_print_flat_folder(path: Path, records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -443,8 +453,9 @@ def write_print_flat_folder(path: Path, records: list[dict[str, Any]]) -> dict[s
     sequence = 1
     for record in records:
         order = record["order"]
+        source_label = str(order.get("source") or "unknown").lower().replace(" ", "_")
         printable_files = [
-            ("taobao_order_detail", record["folder"] / record["order_file"]),
+            (f"{source_label}_order_detail", record["folder"] / record["order_file"]),
             ("payment_record", record["folder"] / record["payment_file"]),
         ]
         for label, source in printable_files:

@@ -14,6 +14,8 @@ Generated print folders live under:
 
 `<batch-folder>\generated\print-flat\<source>`
 
+`generated\print-flat\all` is the complete DB-compiled print set across Taobao, hqchip, Meituan, Jingdong, and other supported order sources. `generated\print-flat\taobao` remains the Taobao-only capture workflow output.
+
 For Taobao, `generated\print-flat\taobao` should contain sequential symlinks or hardlinks to each order-detail screenshot and payment-record screenshot. This folder exists only for bulk select-all printing; the per-order evidence files remain the source of truth.
 
 Travel reimbursement batches may contain:
@@ -67,6 +69,28 @@ All workbook date cells must contain real Excel date values, not preformatted da
 
 The normal workbook does not embed screenshots. Evidence lives as separate screenshots/PDFs beside the workbook or in typed folders.
 
+## Currency Resolution
+
+Store purchase, payment, and claim values independently:
+
+- `amount_rmb`: merchant purchase amount in RMB. Preserve it even when the actual payment uses another currency.
+- `payment_amount` and `payment_currency`: amount actually debited by the wallet, card, or payment provider.
+- `claim_amount` and `claim_currency`: amount and currency written into the reimbursement workbook.
+- `currency_review_status`: `resolved`, `confirmed`, or `needs_confirmation`.
+- `currency_note`: evidence and reasoning used to resolve the currencies.
+
+Apply these rules in order:
+
+1. Prefer explicit currency labels on the merchant and payment records.
+2. Treat the payment provider and known app/session context as supporting evidence. An Octopus payment is normally in HKD.
+3. Do not infer a conflict from unequal numbers before checking whether they are different currencies or an FX conversion.
+4. When a merchant charges RMB and the actual debit is an Octopus HKD payment, preserve the RMB purchase amount and use the actual HKD debit as the claim amount.
+5. Do not identify Octopus from generic colors or layout alone. A merchant row, timestamp, red negative amount, and category icon may support the inference only when Octopus branding or known app context is also present.
+6. If the evidence is still ambiguous, set `currency_review_status` to `needs_confirmation`, add a concise `currency_note`, and continue reviewing the rest of the batch.
+7. At the end of the batch, present all pending rows together. Do not ask the user separately for each order.
+
+The normal compiler writes `generated\currency-confirmation-queue.json` when pending rows exist and blocks final workbook generation until they are changed to `resolved` or `confirmed`. It also queues a nominally `resolved` row when only one payment field is present or when its claim amount/currency does not match the recorded debit. Claim amounts are written to column `D` for HKD, column `E` for RMB/CNY, and column `F` for other currencies.
+
 ## Manifest Object
 
 Each parsed order should become one manifest object:
@@ -100,10 +124,10 @@ Evidence required for Taobao normal reimbursement:
 uv run python scripts\sync_reimbursement_state.py --folder "<batch-folder>"
 ```
 
-Schema v2 represents:
+Schema v3 represents:
 
 - `batches`: batch folder, reimbursement type, source manifest/export, profile, and parsed summary.
-- `orders`: normalized reimbursable orders with Taobao and Alipay identifiers.
+- `orders`: normalized reimbursable orders with source identifiers plus separate purchase, payment, and claim currency fields and batch confirmation state.
 - `order_items`: SKU/item rows attached to each order.
 - `evidence_files`: expected and actual screenshot files, file metadata, hashes, capture method, validation status, and warnings.
 - `travel_expense_rows`: travel workbook expense rows by source worksheet row, category, currency, and amount.
@@ -127,6 +151,8 @@ uv run python scripts\compile_reimbursement_outputs.py --folder "<batch-folder>"
 ```
 
 The compiler reads orders, items, evidence paths, validation status, and artifact state from SQLite. It may still read source screenshot files to create print-flat links and calculate artifact hashes. It should not parse `订单数据*.xlsx`.
+
+The final normal reimbursement workbook is written directly under the batch folder. Manifests, review workbooks, checklists, summaries, and print-flat caches remain under `generated`.
 
 For travel reimbursement, sync the source travel workbook and evidence files into the same database:
 

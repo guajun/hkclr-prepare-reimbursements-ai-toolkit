@@ -50,6 +50,10 @@ uv run python scripts\compile_reimbursement_outputs.py --folder "<path-to-reimbu
 
 Use `--submission-date YYYY-MM-DD` when the workbook date should differ from today's date.
 
+The final normal reimbursement workbook is written in the batch folder. Review workbooks, manifests, summaries, and print-flat caches remain under `generated`.
+
+Normal reimbursement state keeps merchant purchase, payment debit, and reimbursement claim amounts separate. This matters when the merchant charges RMB but the payment provider debits HKD, such as a Jingdong order paid through Octopus. Ambiguous currency cases are collected in `generated\currency-confirmation-queue.json` and must be confirmed together at the end of the batch before the final workbook is compiled.
+
 For travel reimbursement batches:
 
 ```powershell

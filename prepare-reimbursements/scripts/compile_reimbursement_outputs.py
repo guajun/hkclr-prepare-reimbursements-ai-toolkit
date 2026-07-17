@@ -19,13 +19,16 @@ if str(PROJECT_ROOT) not in sys.path:
 from build_taobao_normal_reimbursement import (
     OrderItem,
     ReimbursementOrder,
+    claim_totals_by_currency,
+    currency_confirmation_reason,
     find_template,
+    validate_currency_reviews,
     write_reimbursement_workbook,
     write_review_workbook,
 )
 from prepare_reimbursements import state_db
 from prepare_taobao_evidence import (
-    PRINT_FLAT_ROOT,
+    PRINT_FLAT_ALL_ROOT,
     expected_evidence_files,
     write_capture_queue,
     write_checklist,
@@ -75,6 +78,12 @@ def row_to_order(row: Any, items: list[OrderItem]) -> ReimbursementOrder:
         document_type=row["document_type"] or "",
         missing_receipt_reason=row["missing_receipt_reason"] or "",
         evidence_required=load_json_field(row["evidence_required_json"], []),
+        claim_amount=float(row["claim_amount"]) if row["claim_amount"] is not None else None,
+        claim_currency=row["claim_currency"] or "RMB",
+        payment_amount=float(row["payment_amount"]) if row["payment_amount"] is not None else None,
+        payment_currency=row["payment_currency"] or "",
+        currency_review_status=row["currency_review_status"] or "resolved",
+        currency_note=row["currency_note"] or "",
     )
 
 
@@ -156,7 +165,11 @@ def build_records_from_state(
     records: list[dict[str, Any]] = []
     for order_id, order_index, order in orders:
         evidence = load_evidence(connection, order_id)
-        order_evidence = evidence.get("taobao_order_detail_screenshot")
+        order_evidence = (
+            evidence.get(f"{order.source}_order_detail_screenshot")
+            or evidence.get("order_detail_screenshot")
+            or evidence.get("taobao_order_detail_screenshot")
+        )
         payment_evidence = evidence.get("payment_record_screenshot")
         order_file, payment_file, combined_file = expected_evidence_files(order_index, order.order_no)
         folder = folder_from_evidence(batch_folder, order_index, order.order_no, evidence)
@@ -199,6 +212,7 @@ def build_manifest(batch: Any, profile: dict[str, str], orders: list[Reimburseme
     summary = copy.deepcopy(load_json_field(batch["summary_json"], {}))
     summary["included_orders"] = len(orders)
     summary["total_amount_rmb"] = round(sum(order.amount_rmb for order in orders), 2)
+    summary["claim_totals"] = claim_totals_by_currency(orders)
     return {
         "schema": "prepare-reimbursements.taobao-normal.v1",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -207,6 +221,36 @@ def build_manifest(batch: Any, profile: dict[str, str], orders: list[Reimburseme
         "summary": summary,
         "orders": [asdict(order) for order in orders],
     }
+
+
+def write_currency_confirmation_queue(path: Path, orders: list[ReimbursementOrder]) -> int:
+    pending = [(order, currency_confirmation_reason(order)) for order in orders]
+    pending = [(order, reason) for order, reason in pending if reason]
+    if not pending:
+        path.unlink(missing_ok=True)
+        return 0
+    payload = {
+        "schema": "prepare-reimbursements.currency-confirmation-queue.v1",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "orders": [
+            {
+                "source": order.source,
+                "order_no": order.order_no,
+                "date": order.date,
+                "item_label": order.item_label,
+                "purchase_amount": order.amount_rmb,
+                "purchase_currency": "RMB",
+                "payment_amount": order.payment_amount,
+                "payment_currency": order.payment_currency,
+                "proposed_claim_amount": order.amount_rmb if order.claim_amount is None else order.claim_amount,
+                "proposed_claim_currency": order.claim_currency,
+                "reason": reason,
+            }
+            for order, reason in pending
+        ],
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return len(pending)
 
 
 def write_evidence_summary(
@@ -242,6 +286,7 @@ def write_evidence_summary(
         "checklist": str(checklist_path),
         "queue": str(queue_path),
         "print_flat_folder": print_flat["folder"],
+        "print_flat_scope": "all",
         "print_flat_links": len(print_flat["links"]),
         "print_flat_warnings": print_flat["warnings"],
     }
@@ -260,6 +305,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--folder", type=Path, required=True, help="Reimbursement batch folder")
     parser.add_argument("--db", type=Path, help="SQLite state database. Defaults to <folder>/generated/reimbursement-state.sqlite3")
     parser.add_argument("--out-dir", type=Path, help="Output directory. Defaults to <folder>/generated")
+    parser.add_argument(
+        "--workbook-output",
+        type=Path,
+        help="Final normal reimbursement workbook path. Defaults to the batch folder",
+    )
     parser.add_argument("--evidence-root", type=Path, help="Evidence root. Defaults to <folder>/物品/taobao")
     parser.add_argument("--template", type=Path, help="Previous normal reimbursement workbook to use as template")
     parser.add_argument("--submission-date", default=date.today().isoformat(), help="YYYY-MM-DD date for output filename and signature")
@@ -284,11 +334,22 @@ def main() -> int:
         batch_id = int(batch["id"])
         order_rows = load_orders(connection, batch_id)
         orders = [order for _, _, order in order_rows]
+        currency_queue_path = generated / "currency-confirmation-queue.json"
+        pending_currency_count = write_currency_confirmation_queue(currency_queue_path, orders)
+        if pending_currency_count:
+            try:
+                validate_currency_reviews(orders)
+            except ValueError as error:
+                raise ValueError(f"{error}\nConfirmation queue: {currency_queue_path}") from error
         profile = build_profile(batch, args)
 
         manifest_path = generated / "reimbursement-manifest.json"
         review_path = generated / "reimbursement-review.xlsx"
-        workbook_path = generated / f"報銷清單_Reimbursement list {profile['name']} {args.submission_date}.xlsx"
+        workbook_path = (
+            args.workbook_output.resolve()
+            if args.workbook_output
+            else batch_folder / f"報銷清單_Reimbursement list {profile['name']} {args.submission_date}.xlsx"
+        )
         checklist_path = generated / "taobao-evidence-checklist.xlsx"
         queue_path = generated / "taobao-evidence-capture-queue.md"
         evidence_summary_path = generated / "taobao-evidence-summary.json"
@@ -308,9 +369,9 @@ def main() -> int:
         write_checklist(checklist_path, records)
         write_capture_queue(queue_path, batch_folder, records)
         if args.no_print_flat:
-            print_flat = {"folder": str(batch_folder / PRINT_FLAT_ROOT), "links": [], "warnings": []}
+            print_flat = {"folder": str(batch_folder / PRINT_FLAT_ALL_ROOT), "links": [], "warnings": []}
         else:
-            print_flat = write_print_flat_folder(batch_folder / PRINT_FLAT_ROOT, records)
+            print_flat = write_print_flat_folder(batch_folder / PRINT_FLAT_ALL_ROOT, records)
         evidence_summary = write_evidence_summary(
             path=evidence_summary_path,
             batch_folder=batch_folder,
@@ -328,6 +389,7 @@ def main() -> int:
             "batch": str(batch_folder),
             "orders": len(orders),
             "items": sum(len(order.items) for order in orders),
+            "claim_totals": claim_totals_by_currency(orders),
             "manifest": str(manifest_path),
             "review_workbook": str(review_path),
             "reimbursement_workbook": str(workbook_path),

@@ -9,8 +9,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
-SCHEMA_VERSION = 2
-SNAPSHOT_SCHEMA = "prepare-reimbursements.state.snapshot.v2"
+SCHEMA_VERSION = 3
+SNAPSHOT_SCHEMA = "prepare-reimbursements.state.snapshot.v3"
+CURRENCY_REVIEW_STATUSES = {"resolved", "confirmed", "needs_confirmation"}
 
 
 def utc_now() -> str:
@@ -242,6 +243,21 @@ def migrate(connection: sqlite3.Connection) -> None:
         )
         current = 2
 
+    if current < 3:
+        connection.executescript(
+            """
+            ALTER TABLE orders ADD COLUMN claim_amount REAL;
+            ALTER TABLE orders ADD COLUMN claim_currency TEXT NOT NULL DEFAULT 'RMB';
+            ALTER TABLE orders ADD COLUMN payment_amount REAL;
+            ALTER TABLE orders ADD COLUMN payment_currency TEXT;
+            ALTER TABLE orders ADD COLUMN currency_review_status TEXT NOT NULL DEFAULT 'resolved';
+            ALTER TABLE orders ADD COLUMN currency_note TEXT;
+            UPDATE orders SET claim_amount = amount_rmb WHERE claim_amount IS NULL;
+            PRAGMA user_version = 3;
+            """
+        )
+        current = 3
+
     connection.commit()
 
 
@@ -299,16 +315,42 @@ def upsert_order(
     now = utc_now()
     source = str(order.get("source") or "taobao")
     order_no = str(order["order_no"])
+    amount_rmb = float(order.get("amount_rmb") or 0)
+    claim_amount = order.get("claim_amount")
+    if claim_amount is None:
+        claim_amount = amount_rmb
+    claim_currency = str(order.get("claim_currency") or "RMB").upper()
+    payment_amount = order.get("payment_amount")
+    payment_currency = str(order.get("payment_currency") or "").upper() or None
+    currency_review_status = str(order.get("currency_review_status") or "resolved")
+    if currency_review_status not in CURRENCY_REVIEW_STATUSES:
+        raise ValueError(
+            f"Invalid currency_review_status {currency_review_status!r} for {source}:{order_no}; "
+            f"expected one of {sorted(CURRENCY_REVIEW_STATUSES)}"
+        )
+    currency_note = order.get("currency_note")
+    normalized_order = dict(order)
+    normalized_order.update(
+        {
+            "claim_amount": float(claim_amount),
+            "claim_currency": claim_currency,
+            "payment_amount": float(payment_amount) if payment_amount is not None else None,
+            "payment_currency": payment_currency,
+            "currency_review_status": currency_review_status,
+            "currency_note": currency_note,
+        }
+    )
     connection.execute(
         """
         INSERT INTO orders (
             batch_id, source_order_index, source, order_no,
             taobao_order_detail_url, alipay_trade_no, alipay_detail_url,
             order_date, order_datetime, shop, status, item_label, amount_rmb,
-            shipping_rmb, item_count, document_type, missing_receipt_reason,
+            claim_amount, claim_currency, payment_amount, payment_currency,
+            currency_review_status, currency_note, shipping_rmb, item_count, document_type, missing_receipt_reason,
             evidence_required_json, raw_json, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(batch_id, source, order_no) DO UPDATE SET
             source_order_index = excluded.source_order_index,
             taobao_order_detail_url = excluded.taobao_order_detail_url,
@@ -320,6 +362,12 @@ def upsert_order(
             status = excluded.status,
             item_label = excluded.item_label,
             amount_rmb = excluded.amount_rmb,
+            claim_amount = excluded.claim_amount,
+            claim_currency = excluded.claim_currency,
+            payment_amount = excluded.payment_amount,
+            payment_currency = excluded.payment_currency,
+            currency_review_status = excluded.currency_review_status,
+            currency_note = excluded.currency_note,
             shipping_rmb = excluded.shipping_rmb,
             item_count = excluded.item_count,
             document_type = excluded.document_type,
@@ -341,13 +389,19 @@ def upsert_order(
             order.get("shop"),
             order.get("status"),
             order.get("item_label"),
-            float(order.get("amount_rmb") or 0),
+            amount_rmb,
+            float(claim_amount),
+            claim_currency,
+            float(payment_amount) if payment_amount is not None else None,
+            payment_currency,
+            currency_review_status,
+            currency_note,
             order.get("shipping_rmb"),
             int(order.get("item_count") or len(order.get("items") or [])),
             order.get("document_type"),
             order.get("missing_receipt_reason"),
             json_dumps(order.get("evidence_required") or []),
-            json_dumps(order),
+            json_dumps(normalized_order),
             now,
             now,
         ),
@@ -690,6 +744,12 @@ def snapshot(connection: sqlite3.Connection, *, batch_id: int, db_path: Path) ->
                 "status": order_row["status"],
                 "item_label": order_row["item_label"],
                 "amount_rmb": order_row["amount_rmb"],
+                "claim_amount": order_row["claim_amount"],
+                "claim_currency": order_row["claim_currency"],
+                "payment_amount": order_row["payment_amount"],
+                "payment_currency": order_row["payment_currency"],
+                "currency_review_status": order_row["currency_review_status"],
+                "currency_note": order_row["currency_note"],
                 "taobao_order_detail_url": order_row["taobao_order_detail_url"],
                 "alipay_trade_no": order_row["alipay_trade_no"],
                 "alipay_detail_url": order_row["alipay_detail_url"],

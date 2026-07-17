@@ -125,6 +125,7 @@ def build_artifacts(batch_folder: Path, generated: Path, summary: dict[str, Any]
         "evidence_quarantine_report": generated / "evidence-quarantine-report.json",
         "alipay_normalize_report": generated / "alipay-payment-screenshot-normalize-report.json",
         "alipay_contact_sheet": generated / "alipay-payment-screenshot-contact-sheet.png",
+        "currency_confirmation_queue": generated / "currency-confirmation-queue.json",
     }
     artifacts: list[dict[str, Any]] = []
     for kind, path in candidates.items():
@@ -140,7 +141,7 @@ def build_artifacts(batch_folder: Path, generated: Path, summary: dict[str, Any]
             }
         )
 
-    for workbook in sorted(generated.glob("報銷清單_Reimbursement list*.xlsx")):
+    for workbook in sorted(batch_folder.glob("報銷清單_Reimbursement list*.xlsx")):
         artifacts.append(
             {
                 "artifact_kind": "reimbursement_workbook",
@@ -154,13 +155,17 @@ def build_artifacts(batch_folder: Path, generated: Path, summary: dict[str, Any]
     print_flat_folder = (summary or {}).get("print_flat_folder")
     if print_flat_folder:
         print_flat_warnings = (summary or {}).get("print_flat_warnings", [])
+        print_flat_scope = (summary or {}).get("print_flat_scope", "taobao")
         artifacts.append(
             {
-                "artifact_kind": "taobao_print_flat_folder",
+                "artifact_kind": "reimbursement_print_flat_folder"
+                if print_flat_scope == "all"
+                else "taobao_print_flat_folder",
                 "path": str(print_flat_folder),
                 "relative_path": relative_to_folder(Path(print_flat_folder), batch_folder),
                 "details": {
                     "links": (summary or {}).get("print_flat_links", 0),
+                    "scope": print_flat_scope,
                     "warning_count": len(print_flat_warnings),
                     "warnings_sample": print_flat_warnings[:5],
                 },
