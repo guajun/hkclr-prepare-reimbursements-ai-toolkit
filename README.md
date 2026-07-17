@@ -57,6 +57,43 @@ uv run python scripts\quarantine_invalid_evidence.py --folder "<path-to-reimburs
 
 The first command is a dry run. The second moves only screenshots that already have validation warnings.
 
+## Optional Local OCR Bridge
+
+The toolkit can optionally collaborate with a separately maintained local RapidOCR project. This is an experimental, machine-local bridge: this repository does not install RapidOCR, import its Python package, or write OCR results into SQLite.
+
+Set `HKCLR_RAPIDOCR_PROJECT` to the external project's root directory. Do not commit an absolute local path to this repository.
+
+For the current PowerShell session:
+
+```powershell
+$env:HKCLR_RAPIDOCR_PROJECT = "C:\path\to\hkclr-rapidocr-evaluation"
+```
+
+To persist it for the current Windows user and future shells:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "HKCLR_RAPIDOCR_PROJECT",
+  "C:\path\to\hkclr-rapidocr-evaluation",
+  "User"
+)
+```
+
+Run the external CLI through its own uv project and keep private OCR output inside the reimbursement batch:
+
+```powershell
+$batch = "C:\path\to\reimbursement-batch"
+$ocrOutput = Join-Path $batch "generated\ocr\rapidocr"
+
+uv run --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr doctor --initialize
+uv run --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr scan `
+  $batch `
+  --output $ocrOutput `
+  --profile auto
+```
+
+If the variable is unset, the project is unavailable, or OCR fails, continue with the existing image-review workflow. OCR results are advisory in this phase and must not change SQLite state or evidence validity. See `prepare-reimbursements/references/local-ocr-bridge.md` for the command and output contract.
+
 ## Known Issues
 
 ### Codex In-App Browser Screenshots
