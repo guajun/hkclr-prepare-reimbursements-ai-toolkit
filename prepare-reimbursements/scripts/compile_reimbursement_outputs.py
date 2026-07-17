@@ -341,7 +341,7 @@ def main() -> int:
         }
         compile_summary_path.write_text(json.dumps(compile_summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
-        state_db.replace_artifacts(
+        state_db.upsert_artifacts(
             connection,
             batch_id=batch_id,
             artifacts=build_artifacts(batch_folder, generated, evidence_summary),

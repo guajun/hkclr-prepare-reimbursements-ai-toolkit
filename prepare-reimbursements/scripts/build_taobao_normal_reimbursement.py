@@ -22,6 +22,8 @@ from openpyxl.utils import get_column_letter
 DEFAULT_DOC_TYPE = "淘寶截圖加付款紀錄 Taobao capture screen & payment record"
 DEFAULT_MISSING_REASON = "商家未提供"
 DEFAULT_EVIDENCE = ["taobao_order_detail_screenshot", "payment_record_screenshot"]
+EXCEL_DATE_FORMAT = "dd/mm/yyyy"
+MIN_DATE_COLUMN_WIDTH = 14.0
 TAOBAO_ORDER_DETAIL_URL = "https://buyertrade.taobao.com/trade/detail/trade_item_detail.htm?biz_order_id={order_no}"
 ALIPAY_DETAIL_URL = "https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo={trade_no}"
 
@@ -92,6 +94,20 @@ def parse_datetime(value: Any) -> tuple[str, str]:
         except ValueError:
             pass
     return text[:10], text
+
+
+def parse_excel_date(value: Any) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = cell_text(value)
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            pass
+    raise ValueError(f"Unsupported reimbursement date: {value!r}")
 
 
 def compact_spaces(text: str) -> str:
@@ -541,6 +557,10 @@ def write_reimbursement_workbook(
     worksheet["B4"] = profile["bank"]
     worksheet["B5"] = profile["account"]
     worksheet["B6"] = profile["leader"]
+    worksheet.column_dimensions["B"].width = max(
+        worksheet.column_dimensions["B"].width or 0,
+        MIN_DATE_COLUMN_WIDTH,
+    )
 
     header_row = locate_row(worksheet, "No.")
     item_start = header_row + 1
@@ -561,7 +581,9 @@ def write_reimbursement_workbook(
     for index, order in enumerate(orders, 1):
         row = item_start + index - 1
         worksheet.cell(row, 1, index)
-        worksheet.cell(row, 2, datetime.strptime(order.date, "%Y-%m-%d").date() if order.date else "")
+        date_cell = worksheet.cell(row, 2)
+        date_cell.value = parse_excel_date(order.date) if order.date else None
+        date_cell.number_format = EXCEL_DATE_FORMAT
         worksheet.cell(row, 3, order.item_label)
         worksheet.cell(row, 4, None)
         worksheet.cell(row, 5, order.amount_rmb)
@@ -575,10 +597,12 @@ def write_reimbursement_workbook(
     worksheet.cell(total_row, 5, f"=SUM(E{item_start}:E{last_item_row})")
     worksheet.cell(total_row, 6, f"=SUM(F{item_start}:F{last_item_row})")
 
-    signature_date = datetime.strptime(submission_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+    signature_date = parse_excel_date(submission_date)
     for row in range(total_row + 1, min(worksheet.max_row, total_row + 12) + 1):
         if worksheet.cell(row, 7).value == "Date:":
-            worksheet.cell(row, 8, signature_date)
+            signature_date_cell = worksheet.cell(row, 8)
+            signature_date_cell.value = signature_date
+            signature_date_cell.number_format = EXCEL_DATE_FORMAT
             break
 
     workbook.save(output)

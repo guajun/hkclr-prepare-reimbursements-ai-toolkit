@@ -183,10 +183,18 @@ def sync_batch(
     generated = batch_folder / "generated"
 
     with state_db.connect(db_path) as connection:
+        existing = connection.execute(
+            "SELECT reimbursement_type FROM batches WHERE batch_folder = ?",
+            (str(batch_folder),),
+        ).fetchone()
+        reimbursement_type = state_db.merge_reimbursement_type(
+            existing["reimbursement_type"] if existing else None,
+            "normal",
+        )
         batch_id = state_db.upsert_batch(
             connection,
             batch_folder=batch_folder,
-            reimbursement_type="normal",
+            reimbursement_type=reimbursement_type,
             source_manifest_path=manifest_path,
             source_export_path=Path(manifest["source_file"]) if manifest.get("source_file") else None,
             profile=manifest.get("profile") or {},
@@ -258,7 +266,7 @@ def sync_batch(
             tool="scripts/prepare_taobao_evidence.py",
             results=validation_rows,
         )
-        artifact_count = state_db.replace_artifacts(
+        artifact_count = state_db.upsert_artifacts(
             connection,
             batch_id=batch_id,
             artifacts=build_artifacts(batch_folder, generated, summary),

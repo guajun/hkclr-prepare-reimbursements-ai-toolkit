@@ -1,12 +1,14 @@
 # HKCLR Prepare Reimbursements AI Toolkit
 
-Codex skill and scripts for preparing reimbursement batches from edited Taobao order exports and manually collected evidence.
+Codex skill and scripts for preparing reimbursement batches from edited Taobao order exports, HKCLR travel reimbursement workbooks, and manually collected evidence.
 
 The current workflow reads a dated reimbursement folder, applies the convention that a blank order number marks an order as not reimbursable, groups multi-SKU Taobao orders by merged Excel cells, and generates:
 
 - `reimbursement-manifest.json`
 - `reimbursement-review.xlsx`
 - `報銷清單_Reimbursement list <name> <date>.xlsx`
+- `travel-reimbursement-manifest.json`
+- `差旅報銷清單_行程資料列表Reimbursement for travel expenses - <name> <date>.xlsx`
 - `reimbursement-state.sqlite3`
 - `reimbursement-state.snapshot.json`
 
@@ -47,6 +49,19 @@ uv run python scripts\compile_reimbursement_outputs.py --folder "<path-to-reimbu
 ```
 
 Use `--submission-date YYYY-MM-DD` when the workbook date should differ from today's date.
+
+For travel reimbursement batches:
+
+```powershell
+uv run python scripts\sync_travel_reimbursement_state.py `
+  --folder "<path-to-reimbursement-batch>"
+
+uv run python scripts\compile_travel_reimbursement_outputs.py `
+  --folder "<path-to-reimbursement-batch>" `
+  --submission-date YYYY-MM-DD
+```
+
+The travel workflow parses `差旅報銷清單_行程資料列表Reimbursement for travel expenses*.xlsx`, the `差旅` evidence folder, and optional `差旅.docx` image bundle into SQLite. The compiler then regenerates the final travel workbook in the batch folder beside the normal reimbursement workbook; `travel-evidence-summary.json` remains under `generated`.
 
 If validation reports bad screenshots, quarantine them out of active evidence folders:
 

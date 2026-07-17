@@ -63,6 +63,8 @@ Default Taobao document fields:
 - Document type: `淘寶截圖加付款紀錄 Taobao capture screen & payment record`
 - Missing receipt reason: `商家未提供`
 
+All workbook date cells must contain real Excel date values, not preformatted date strings. Use the display format `dd/mm/yyyy` for normal reimbursement item dates and the signature date. Keep the normal reimbursement date column at least 14 Excel character units wide so valid dates do not render as `########`. This keeps sorting, filtering, and date arithmetic reliable across Excel locales.
+
 The normal workbook does not embed screenshots. Evidence lives as separate screenshots/PDFs beside the workbook or in typed folders.
 
 ## Manifest Object
@@ -92,18 +94,21 @@ Evidence required for Taobao normal reimbursement:
 
 ## SQLite State Database
 
-`generated\reimbursement-state.sqlite3` is the transition source state for a batch. It is rebuilt or refreshed from the current manifest and evidence files by:
+`generated\reimbursement-state.sqlite3` is the transition source state for a batch. Normal Taobao state is rebuilt or refreshed from the current manifest and evidence files by:
 
 ```powershell
 uv run python scripts\sync_reimbursement_state.py --folder "<batch-folder>"
 ```
 
-Schema v1 represents:
+Schema v2 represents:
 
 - `batches`: batch folder, reimbursement type, source manifest/export, profile, and parsed summary.
 - `orders`: normalized reimbursable orders with Taobao and Alipay identifiers.
 - `order_items`: SKU/item rows attached to each order.
 - `evidence_files`: expected and actual screenshot files, file metadata, hashes, capture method, validation status, and warnings.
+- `travel_expense_rows`: travel workbook expense rows by source worksheet row, category, currency, and amount.
+- `travel_itinerary_rows`: travel itinerary rows with trip date, origin, destination, and purpose.
+- `travel_evidence_files`: manually supplied travel screenshots and docx image bundles with file metadata and validation status.
 - `validation_results`: per-order validation state from evidence preparation scripts.
 - `generated_artifacts`: manifests, workbooks, checklists, contact sheets, print folders, and other compiled outputs.
 
@@ -122,6 +127,27 @@ uv run python scripts\compile_reimbursement_outputs.py --folder "<batch-folder>"
 ```
 
 The compiler reads orders, items, evidence paths, validation status, and artifact state from SQLite. It may still read source screenshot files to create print-flat links and calculate artifact hashes. It should not parse `订单数据*.xlsx`.
+
+For travel reimbursement, sync the source travel workbook and evidence files into the same database:
+
+```powershell
+uv run python scripts\sync_travel_reimbursement_state.py --folder "<batch-folder>"
+```
+
+This script reads the workbook through a temporary copy first, because OneDrive reparse/placeholder files may fail when opened directly by `openpyxl`. It parses:
+
+- sheet `差旅報銷清單`, rows 10 through the row before `Total:`
+- sheet `行程資料列表`, rows 2 onward
+- `差旅` image files, sorted by filename
+- `差旅.docx` as an optional image bundle record
+
+After SQLite travel state exists, rebuild the generated travel workbook without treating the source workbook as state:
+
+```powershell
+uv run python scripts\compile_travel_reimbursement_outputs.py --folder "<batch-folder>" --submission-date YYYY-MM-DD
+```
+
+The compiler uses the original travel workbook as a formatting template when available, fills profile cells, expense rows, formulas, and itinerary rows from SQLite, and writes the final travel workbook directly under the batch folder beside the normal reimbursement workbook. Review summaries such as `generated\travel-evidence-summary.json` remain under `generated`.
 
 ## Evidence Quarantine
 
@@ -204,7 +230,21 @@ Do not use Alipay payment skills to automate login, 2FA, app-only history browsi
 
 Travel reimbursement uses a separate workbook with sheets `差旅報銷清單` and `行程資料列表`.
 
-The agent may fill dates, destinations, trip purpose, and transport amounts from a structured manifest. The human user remains responsible for confirming the trip purpose, route, and whether each payment record is enough. Octopus-style travel evidence may only need the payment/travel record screenshot.
+The first sheet has profile fields at `A3`, `I3`, `I5`, and `A6`. Data rows start at row 10 and end before the row whose column A value starts with `Total:`. The current HKCLR template uses:
+
+- `A`: date
+- `B`: destination
+- `C:E`: Flight/Vessel/Train/Car amounts in HKD/RMB/Other
+- `F:H`: Hotel amounts in HKD/RMB/Other
+- `I:K`: Conference Fee amounts in HKD/RMB/Other
+- `L:N`: Meal amounts in HKD/RMB/Other
+- `O:Q`: Misc. amounts in HKD/RMB/Other
+
+The itinerary sheet starts at row 2 and uses `A:E` for index, date, origin, destination, and purpose.
+
+Travel claim dates in column `A` and itinerary dates in column `B` must contain real Excel date values with the display format `dd/mm/yyyy`. Keep both date columns at least 14 Excel character units wide. Do not write `strftime()` output such as `13/05/2026` into those cells as text.
+
+The human user remains responsible for confirming the trip purpose, route, and whether each payment record is enough. The agent may parse, normalize into SQLite, and compile the workbook, but should not infer a route or business purpose that is not already present in the workbook or supplied by the user. Octopus-style travel evidence may only need the payment/travel record screenshot.
 
 ## Planned Frontend
 
