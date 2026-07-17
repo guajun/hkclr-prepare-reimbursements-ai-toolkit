@@ -1,12 +1,14 @@
 # HKCLR Prepare Reimbursements AI Toolkit
 
-Codex skill and scripts for preparing reimbursement batches from edited Taobao order exports and manually collected evidence.
+Codex skill and scripts for preparing reimbursement batches from edited Taobao order exports, HKCLR travel reimbursement workbooks, and manually collected evidence.
 
 The current workflow reads a dated reimbursement folder, applies the convention that a blank order number marks an order as not reimbursable, groups multi-SKU Taobao orders by merged Excel cells, and generates:
 
 - `reimbursement-manifest.json`
 - `reimbursement-review.xlsx`
 - `報銷清單_Reimbursement list <name> <date>.xlsx`
+- `travel-reimbursement-manifest.json`
+- `差旅報銷清單_行程資料列表Reimbursement for travel expenses - <name> <date>.xlsx`
 - `reimbursement-state.sqlite3`
 - `reimbursement-state.snapshot.json`
 
@@ -47,6 +49,23 @@ uv run python scripts\compile_reimbursement_outputs.py --folder "<path-to-reimbu
 ```
 
 Use `--submission-date YYYY-MM-DD` when the workbook date should differ from today's date.
+
+The final normal reimbursement workbook is written in the batch folder. Review workbooks, manifests, summaries, and print-flat caches remain under `generated`.
+
+Normal reimbursement state keeps merchant purchase, payment debit, and reimbursement claim amounts separate. This matters when the merchant charges RMB but the payment provider debits HKD, such as a Jingdong order paid through Octopus. Ambiguous currency cases are collected in `generated\currency-confirmation-queue.json` and must be confirmed together at the end of the batch before the final workbook is compiled.
+
+For travel reimbursement batches:
+
+```powershell
+uv run python scripts\sync_travel_reimbursement_state.py `
+  --folder "<path-to-reimbursement-batch>"
+
+uv run python scripts\compile_travel_reimbursement_outputs.py `
+  --folder "<path-to-reimbursement-batch>" `
+  --submission-date YYYY-MM-DD
+```
+
+The travel workflow parses `差旅報銷清單_行程資料列表Reimbursement for travel expenses*.xlsx`, the `差旅` evidence folder, and optional `差旅.docx` image bundle into SQLite. The compiler then regenerates the final travel workbook in the batch folder beside the normal reimbursement workbook; `travel-evidence-summary.json` remains under `generated`.
 
 If validation reports bad screenshots, quarantine them out of active evidence folders:
 
@@ -92,7 +111,7 @@ uv run --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr scan `
   --profile auto
 ```
 
-If the variable is unset, the project is unavailable, or OCR fails, continue with the existing image-review workflow. OCR results are advisory in this phase and must not change SQLite state, evidence validity, or invoke the legacy screenshot-quarantine workaround. See `prepare-reimbursements/references/local-ocr-bridge.md` for the command and output contract.
+If the variable is unset, the project is unavailable, or OCR fails, continue with the existing image-review workflow. OCR results are advisory in this phase and must not change SQLite state, evidence validity, or invoke the legacy screenshot-quarantine workaround. Recursive scans may list derived `generated\print-flat` images as additional paths; do not interpret OCR path counts as unique evidence counts. See `prepare-reimbursements/references/local-ocr-bridge.md` for the command and output contract.
 
 ## Known Issues
 

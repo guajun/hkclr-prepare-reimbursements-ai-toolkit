@@ -1,6 +1,6 @@
 ---
 name: prepare-reimbursements
-description: Prepare reimbursement batches from local reimbursement folders, especially Taobao order-export spreadsheets, Taobao order-detail screenshots, Alipay trade numbers extracted from Taobao details, and manually collected receipt screenshots. Use when Codex needs to scan reimbursement source files, apply the "blank order number means not reimbursable" convention, generate a review manifest, fill HKCLR normal reimbursement workbooks, extract Alipay detail URLs from Taobao evidence, plan travel reimbursement workbooks, validate missing evidence for normal and travel reimbursement folders, or coordinate reimbursement-related Alipay cashier-link/HTTP 402 payment flows with dedicated Alipay payment skills.
+description: Prepare reimbursement batches from local reimbursement folders, especially Taobao order-export spreadsheets, Taobao order-detail screenshots, Alipay trade numbers extracted from Taobao details, HKCLR normal reimbursement workbooks, HKCLR travel reimbursement workbooks, itinerary sheets, and manually collected receipt screenshots. Use when Codex needs to scan reimbursement source files, apply the "blank order number means not reimbursable" convention, generate review manifests, fill normal or travel reimbursement workbooks, extract Alipay detail URLs from Taobao evidence, validate missing evidence for normal and travel reimbursement folders, or coordinate reimbursement-related Alipay cashier-link/HTTP 402 payment flows with dedicated Alipay payment skills.
 ---
 
 # Prepare Reimbursements
@@ -21,12 +21,15 @@ description: Prepare reimbursement batches from local reimbursement folders, esp
 12. If `HKCLR_RAPIDOCR_PROJECT` is set, read `references/local-ocr-bridge.md` and run the external OCR CLI once after final screenshots exist. Treat its output as advisory: use its summary to prioritize review, but do not update SQLite state or evidence validity from OCR in this phase. If the variable is unset or the external command fails, continue with the existing image-review workflow.
 13. Run `scripts/prepare_taobao_evidence.py` after final screenshots exist. It refreshes `generated/print-flat/taobao`, a flat all-screenshots print folder with sequential symlinks or hardlinks back to the per-order evidence files, so the user can select all and print while preserving one source of truth.
 14. Sync the batch into SQLite with `scripts/sync_reimbursement_state.py`. The database records batches, orders, items, evidence files, validation results, and generated artifacts; the JSON snapshot is the review/diff format.
-15. To rebuild outputs after the DB exists, use `scripts/compile_reimbursement_outputs.py` instead of re-reading the edited Taobao export. This compiles the manifest, review workbook, reimbursement workbook, evidence checklist, capture queue, print-flat folder, and compile summary from SQLite plus source evidence files.
-16. If screenshot validation reports bad final evidence, run `scripts/quarantine_invalid_evidence.py` first as a dry run, then with `--apply` only after confirming the target list. Re-run evidence preparation and state sync afterwards so quarantined images no longer count.
-17. If the Codex in-app browser screenshot output is an abnormal 2x2 tiled image, especially around `4276x2404` after a forced `1920x1080` viewport override, stop the batch. Treat this as a browser screenshot backend failure and use a real browser capture engine instead of masking it with a crop.
-18. Search or filter the Alipay bill list only as a fallback when Taobao does not expose a usable `支付宝交易号`.
-19. For reimbursement-related live payment links or HTTP 402 payment responses, use the Alipay payment skills as a separate payment workflow, then return here to capture evidence and update the reimbursement packet.
-20. Do not automate login, 2FA, wallet binding, payment, or manual app-only flows without the user's explicit intent and active participation.
+15. To rebuild outputs after the DB exists, use `scripts/compile_reimbursement_outputs.py` instead of re-reading the edited Taobao export. This compiles the manifest, review workbook, reimbursement workbook, evidence checklist, capture queue, complete `generated/print-flat/all` folder, and compile summary from SQLite plus source evidence files.
+16. Resolve currency before final compilation. Keep purchase, payment, and reimbursement amounts separate. When any currency or amount remains uncertain, mark the order `needs_confirmation`, finish reviewing the batch, then ask the user once using the generated currency confirmation queue. Do not interrupt the user order by order.
+17. For travel reimbursement batches, run `scripts/sync_travel_reimbursement_state.py` to parse `差旅報銷清單_行程資料列表Reimbursement for travel expenses*.xlsx`, `差旅` images, and `差旅.docx` into SQLite travel tables and `travel-reimbursement-manifest.json`.
+18. To rebuild travel outputs after the DB exists, use `scripts/compile_travel_reimbursement_outputs.py`. This writes a generated travel workbook and `travel-evidence-summary.json` from SQLite state.
+19. If screenshot validation reports bad final evidence, run `scripts/quarantine_invalid_evidence.py` first as a dry run, then with `--apply` only after confirming the target list. Re-run evidence preparation and state sync afterwards so quarantined images no longer count.
+20. If the Codex in-app browser screenshot output is an abnormal 2x2 tiled image, especially around `4276x2404` after a forced `1920x1080` viewport override, stop the batch. Treat this as a browser screenshot backend failure and use a real browser capture engine instead of masking it with a crop.
+21. Search or filter the Alipay bill list only as a fallback when Taobao does not expose a usable `支付宝交易号`.
+22. For reimbursement-related live payment links or HTTP 402 payment responses, use the Alipay payment skills as a separate payment workflow, then return here to capture evidence and update the reimbursement packet.
+23. Do not automate login, 2FA, wallet binding, payment, or manual app-only flows without the user's explicit intent and active participation.
 
 ## Human And Agent Boundary
 
@@ -34,7 +37,23 @@ The human user decides which orders are reimbursable by deleting order numbers f
 
 The agent parses the edited export, fills deterministic workbook fields, generates manifests, validates required evidence, and prepares screenshot capture checklists or browser automation steps where feasible.
 
+## Currency Resolution And Batch Confirmation
+
+Track three distinct facts for every normal reimbursement order:
+
+- purchase amount and currency shown by the merchant;
+- payment amount and currency actually debited by the payment provider;
+- claim amount and currency written into the reimbursement workbook.
+
+Do not treat different numeric values as a contradiction until currencies are checked. Explicit currency labels and payment-provider context outrank amount matching. For example, a Jingdong order can show `RMB 37.00` while an Octopus payment record shows an actual debit of `HKD 42.60`; preserve both facts and claim `HKD 42.60`.
+
+Use known Octopus transaction-history styling only as supporting evidence for an HKD payment. The UI commonly shows a merchant row, timestamp, red negative debit, and category icon, but visual style alone is not authoritative. Require explicit Octopus branding, an established Octopus app/session context, or user confirmation. Otherwise set `currency_review_status` to `needs_confirmation` and explain the uncertainty in `currency_note`.
+
+Use `resolved` when the evidence is unambiguous and `confirmed` after the user has explicitly settled an ambiguous case. Accumulate all `needs_confirmation` orders and ask the user once at the end of the batch. The compiler also queues a `resolved` order automatically when payment amount/currency is incomplete or its proposed claim does not match the recorded debit. `scripts/compile_reimbursement_outputs.py` writes `generated/currency-confirmation-queue.json` and refuses to produce a final workbook while that queue is non-empty.
+
 For Taobao normal reimbursement, the agent should treat the Taobao order detail page as the source of the Alipay transaction id. Capture the Taobao screenshot first, extract `支付宝交易号`, then construct `https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo=<支付宝交易号>` and capture the Alipay detail page. Do not use amount/date matching in Alipay as the primary method.
+
+For travel reimbursement, the human user confirms trip purpose, route, and evidence sufficiency. The agent may parse the travel workbook, record transport/hotel/conference/meal/misc expense rows, record itinerary rows, scan manually captured `差旅` screenshots or `差旅.docx`, and compile a fresh travel workbook from SQLite. Do not invent trip purposes or route meanings from screenshots.
 
 ## Taobao Order-Detail Browser Capture
 
@@ -105,7 +124,7 @@ When the variable is present:
 1. Confirm that `$env:HKCLR_RAPIDOCR_PROJECT` exists and contains `pyproject.toml`.
 2. Run `uv run --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr doctor --initialize` before the first scan in a new environment.
 3. Run one batch scan with output under `<batch-folder>\generated\ocr\rapidocr` as documented in `references/local-ocr-bridge.md`.
-4. Read `ocr-summary.json` first. Read `ocr-manifest.jsonl` only to locate `review` or `error` records. Do not inject every OCR object's full text into the agent context.
+4. Read `ocr-summary.json` first. Read `ocr-manifest.jsonl` only to locate rows whose `status` is `error` or whose `extracted_fields.profile_check` is `review`. Do not inject every OCR object's full text into the agent context.
 5. Do not run concurrent scans against the same output directory.
 
 An unset variable, missing project, failed health check, failed scan, unreadable result, or unsupported schema is a soft failure. Report it briefly and continue the current multimodal/manual evidence workflow. In this integration phase, external OCR must not modify reimbursement source files, the manifest, SQLite, or compiled workbooks, and it must not invoke the legacy screenshot-quarantine workaround.
@@ -170,7 +189,33 @@ Rebuild generated outputs from SQLite state without reading the edited Taobao ex
 uv run python scripts\compile_reimbursement_outputs.py --folder "<batch-folder>" --submission-date YYYY-MM-DD
 ```
 
-This compiler regenerates the compatibility manifest, review workbook, reimbursement workbook, evidence checklist, capture queue, print-flat folder, and `reimbursement-state-compile-summary.json`, then updates the generated-artifacts table in SQLite. Run `scripts\sync_reimbursement_state.py` afterwards when you also want a fresh snapshot JSON.
+This compiler regenerates the compatibility manifest, review workbook, evidence checklist, capture queue, complete `generated\print-flat\all` folder across every order source, and `reimbursement-state-compile-summary.json`, then updates the generated-artifacts table in SQLite. The final normal reimbursement workbook is written in the batch folder beside the final travel workbook; summaries remain under `generated`. The Taobao-only evidence preparation command continues to maintain `generated\print-flat\taobao`. Run `scripts\sync_reimbursement_state.py` afterwards when you also want a fresh snapshot JSON.
+
+For HKCLR travel reimbursement, sync the workbook, itinerary sheet, and travel evidence into the same SQLite database:
+
+```powershell
+uv run python scripts\sync_travel_reimbursement_state.py --folder "<batch-folder>"
+```
+
+Default travel inputs:
+
+- `<batch-folder>\差旅報銷清單_行程資料列表Reimbursement for travel expenses*.xlsx`
+- `<batch-folder>\差旅\*.png|jpg|jpeg|webp|bmp`
+- `<batch-folder>\差旅.docx`, when present
+
+Default travel outputs:
+
+- `<batch-folder>\generated\travel-reimbursement-manifest.json`
+- updated `<batch-folder>\generated\reimbursement-state.sqlite3`
+- updated `<batch-folder>\generated\reimbursement-state.snapshot.json`
+
+Rebuild travel outputs from SQLite without reparsing the source workbook:
+
+```powershell
+uv run python scripts\compile_travel_reimbursement_outputs.py --folder "<batch-folder>" --submission-date YYYY-MM-DD
+```
+
+This compiler uses the original travel workbook as a layout template when available. It writes the final travel workbook in the batch folder beside the normal reimbursement workbook, while `travel-evidence-summary.json` and compile summaries remain under `generated`.
 
 If validation warnings identify bad screenshots, preview and then apply quarantine:
 
@@ -199,4 +244,4 @@ uv run python scripts\prepare_taobao_evidence.py --folder "<batch-folder>"
 
 ## Current Limits
 
-Travel reimbursement, Meituan/manual evidence ingestion, and drag-and-drop local frontend are planned workflow layers. Keep them in the convention document until implemented.
+Meituan/manual evidence ingestion beyond DB-level records and a drag-and-drop local frontend are planned workflow layers. Keep frontend and non-Taobao capture conventions in the convention document until implemented.

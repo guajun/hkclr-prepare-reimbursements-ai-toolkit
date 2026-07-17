@@ -52,6 +52,8 @@ The external tool must treat the batch as read-only. Its private derived files s
 - `ocr-manifest.jsonl`: one record per discovered image.
 - `objects\*.ocr.json`: cached line-level text, boxes, confidence, and extracted field candidates.
 
+The scanner discovers image paths recursively. Existing derived images under the batch, including `generated\print-flat` copies and optional OCR visualizations, may therefore appear as additional manifest rows. Hash caching avoids repeated inference for identical files, but `images_discovered` and manifest row counts are path counts, not unique evidence counts. Do not use those counts to decide evidence completeness.
+
 These files can contain payment and reimbursement data. Do not commit, upload, or paste them wholesale into an agent prompt.
 
 ## Agent Consumption
@@ -60,7 +62,7 @@ Read results from coarse to fine:
 
 1. Read `ocr-summary.json`.
 2. If the schema is unsupported, stop consuming OCR output and continue the existing workflow.
-3. Read `ocr-manifest.jsonl` only when summary counts require investigation.
+3. Read `ocr-manifest.jsonl` only when summary counts require investigation. Prioritize rows whose `status` is `error` or whose `extracted_fields.profile_check` is `review`.
 4. Inspect individual object JSON or source images only for records that need review.
 
 The OCR bridge may help locate transaction-number candidates, amount candidates, missing keywords, and images needing review. It does not establish accounting truth and cannot override known order data, image-quality warnings, or human judgment.

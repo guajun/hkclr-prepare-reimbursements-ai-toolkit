@@ -9,6 +9,7 @@ import json
 import re
 import shutil
 import sys
+import tempfile
 from dataclasses import dataclass, asdict
 from datetime import datetime, date
 from pathlib import Path
@@ -22,6 +23,8 @@ from openpyxl.utils import get_column_letter
 DEFAULT_DOC_TYPE = "淘寶截圖加付款紀錄 Taobao capture screen & payment record"
 DEFAULT_MISSING_REASON = "商家未提供"
 DEFAULT_EVIDENCE = ["taobao_order_detail_screenshot", "payment_record_screenshot"]
+EXCEL_DATE_FORMAT = "dd/mm/yyyy"
+MIN_DATE_COLUMN_WIDTH = 14.0
 TAOBAO_ORDER_DETAIL_URL = "https://buyertrade.taobao.com/trade/detail/trade_item_detail.htm?biz_order_id={order_no}"
 ALIPAY_DETAIL_URL = "https://consumeprod.alipay.com/record/detail/simpleDetail.htm?bizType=TRADE&bizInNo={trade_no}"
 
@@ -58,6 +61,12 @@ class ReimbursementOrder:
     document_type: str
     missing_receipt_reason: str
     evidence_required: list[str]
+    claim_amount: float | None = None
+    claim_currency: str = "RMB"
+    payment_amount: float | None = None
+    payment_currency: str = ""
+    currency_review_status: str = "resolved"
+    currency_note: str = ""
 
 
 def cell_text(value: Any) -> str:
@@ -92,6 +101,20 @@ def parse_datetime(value: Any) -> tuple[str, str]:
         except ValueError:
             pass
     return text[:10], text
+
+
+def parse_excel_date(value: Any) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = cell_text(value)
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            pass
+    raise ValueError(f"Unsupported reimbursement date: {value!r}")
 
 
 def compact_spaces(text: str) -> str:
@@ -250,6 +273,56 @@ def order_to_json(order: ReimbursementOrder) -> dict[str, Any]:
     return result
 
 
+def claim_amount_for_order(order: ReimbursementOrder) -> float:
+    return float(order.amount_rmb if order.claim_amount is None else order.claim_amount)
+
+
+def claim_totals_by_currency(orders: list[ReimbursementOrder]) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for order in orders:
+        currency = (order.claim_currency or "RMB").upper()
+        totals[currency] = round(totals.get(currency, 0.0) + claim_amount_for_order(order), 2)
+    return totals
+
+
+def currency_confirmation_reason(order: ReimbursementOrder) -> str | None:
+    valid_statuses = {"resolved", "confirmed", "needs_confirmation"}
+    if order.currency_review_status not in valid_statuses:
+        raise ValueError(
+            f"Invalid currency_review_status {order.currency_review_status!r} for "
+            f"{order.source}:{order.order_no}"
+        )
+    if order.currency_review_status == "needs_confirmation":
+        return order.currency_note or "currency confirmation required"
+    if order.currency_review_status == "confirmed":
+        return None
+
+    has_payment_amount = order.payment_amount is not None
+    has_payment_currency = bool(order.payment_currency)
+    if has_payment_amount != has_payment_currency:
+        return "payment amount and currency must be recorded together"
+    if has_payment_amount:
+        claim_currency = (order.claim_currency or "RMB").upper()
+        payment_currency = order.payment_currency.upper()
+        if claim_currency != payment_currency or abs(claim_amount_for_order(order) - float(order.payment_amount)) > 0.005:
+            return "proposed claim does not match the recorded payment debit"
+    return None
+
+
+def validate_currency_reviews(orders: list[ReimbursementOrder]) -> None:
+    pending = [(order, currency_confirmation_reason(order)) for order in orders]
+    pending = [(order, reason) for order, reason in pending if reason]
+    if not pending:
+        return
+    lines = [
+        f"{order.source}:{order.order_no} purchase=RMB {order.amount_rmb:.2f} "
+        f"proposed_claim={order.claim_currency} {claim_amount_for_order(order):.2f} "
+        f"note={reason}"
+        for order, reason in pending
+    ]
+    raise ValueError("Currency confirmation required before final compile:\n" + "\n".join(lines))
+
+
 def write_manifest(
     path: Path,
     source_file: Path,
@@ -265,6 +338,7 @@ def write_manifest(
         "summary": {
             "included_orders": len(orders),
             "total_amount_rmb": round(sum(order.amount_rmb for order in orders), 2),
+            "claim_totals": claim_totals_by_currency(orders),
             "skipped": skipped,
         },
         "orders": [order_to_json(order) for order in orders],
@@ -285,7 +359,13 @@ def write_review_workbook(path: Path, orders: list[ReimbursementOrder], skipped:
         "Date",
         "Shop",
         "Item Label",
-        "Amount RMB",
+        "Purchase Amount RMB",
+        "Claim Amount",
+        "Claim Currency",
+        "Payment Amount",
+        "Payment Currency",
+        "Currency Review",
+        "Currency Note",
         "Status",
         "Item Count",
         "Document Type",
@@ -311,6 +391,12 @@ def write_review_workbook(path: Path, orders: list[ReimbursementOrder], skipped:
                 order.shop,
                 order.item_label,
                 order.amount_rmb,
+                claim_amount_for_order(order),
+                order.claim_currency,
+                order.payment_amount,
+                order.payment_currency,
+                order.currency_review_status,
+                order.currency_note,
                 order.status,
                 order.item_count,
                 order.document_type,
@@ -323,14 +409,20 @@ def write_review_workbook(path: Path, orders: list[ReimbursementOrder], skipped:
     summary_row = len(orders) + 3
     worksheet.cell(summary_row, 1, "Included orders")
     worksheet.cell(summary_row, 2, len(orders))
-    worksheet.cell(summary_row + 1, 1, "Total RMB")
+    worksheet.cell(summary_row + 1, 1, "Purchase total RMB")
     worksheet.cell(summary_row + 1, 2, round(sum(order.amount_rmb for order in orders), 2))
-    worksheet.cell(summary_row + 2, 1, "Skipped blank order number")
-    worksheet.cell(summary_row + 2, 2, skipped.get("blank_order_number", 0))
-    worksheet.cell(summary_row + 3, 1, "Skipped status")
-    worksheet.cell(summary_row + 3, 2, skipped.get("status", 0))
+    worksheet.cell(summary_row + 2, 1, "Claim totals")
+    worksheet.cell(
+        summary_row + 2,
+        2,
+        ", ".join(f"{currency} {amount:.2f}" for currency, amount in claim_totals_by_currency(orders).items()),
+    )
+    worksheet.cell(summary_row + 3, 1, "Skipped blank order number")
+    worksheet.cell(summary_row + 3, 2, skipped.get("blank_order_number", 0))
+    worksheet.cell(summary_row + 4, 1, "Skipped status")
+    worksheet.cell(summary_row + 4, 2, skipped.get("status", 0))
 
-    widths = [8, 24, 70, 30, 80, 14, 22, 36, 14, 12, 12, 52, 22, 46, 24]
+    widths = [8, 24, 70, 30, 80, 14, 22, 36, 16, 14, 14, 16, 16, 18, 40, 12, 12, 52, 22, 46, 24]
     for index, width in enumerate(widths, 1):
         worksheet.column_dimensions[get_column_letter(index)].width = width
     for row in worksheet.iter_rows():
@@ -519,6 +611,14 @@ def create_builtin_workbook(row_count: int) -> openpyxl.Workbook:
 def load_template_or_builtin(template: Path | None, output: Path, row_count: int) -> tuple[openpyxl.Workbook, str]:
     if template:
         try:
+            if template.resolve() == output.resolve():
+                with tempfile.NamedTemporaryFile(suffix=template.suffix, delete=False) as handle:
+                    temp_path = Path(handle.name)
+                try:
+                    shutil.copyfile(template, temp_path)
+                    return openpyxl.load_workbook(temp_path), str(template)
+                finally:
+                    temp_path.unlink(missing_ok=True)
             shutil.copyfile(template, output)
             return openpyxl.load_workbook(output), str(template)
         except OSError as error:
@@ -533,6 +633,7 @@ def write_reimbursement_workbook(
     profile: dict[str, str],
     submission_date: str,
 ) -> str:
+    validate_currency_reviews(orders)
     output.parent.mkdir(parents=True, exist_ok=True)
     workbook, template_used = load_template_or_builtin(template, output, len(orders))
     worksheet = workbook.active
@@ -541,6 +642,10 @@ def write_reimbursement_workbook(
     worksheet["B4"] = profile["bank"]
     worksheet["B5"] = profile["account"]
     worksheet["B6"] = profile["leader"]
+    worksheet.column_dimensions["B"].width = max(
+        worksheet.column_dimensions["B"].width or 0,
+        MIN_DATE_COLUMN_WIDTH,
+    )
 
     header_row = locate_row(worksheet, "No.")
     item_start = header_row + 1
@@ -561,11 +666,15 @@ def write_reimbursement_workbook(
     for index, order in enumerate(orders, 1):
         row = item_start + index - 1
         worksheet.cell(row, 1, index)
-        worksheet.cell(row, 2, datetime.strptime(order.date, "%Y-%m-%d").date() if order.date else "")
+        date_cell = worksheet.cell(row, 2)
+        date_cell.value = parse_excel_date(order.date) if order.date else None
+        date_cell.number_format = EXCEL_DATE_FORMAT
         worksheet.cell(row, 3, order.item_label)
-        worksheet.cell(row, 4, None)
-        worksheet.cell(row, 5, order.amount_rmb)
-        worksheet.cell(row, 6, None)
+        claim_amount = claim_amount_for_order(order)
+        claim_currency = (order.claim_currency or "RMB").upper()
+        worksheet.cell(row, 4, claim_amount if claim_currency == "HKD" else None)
+        worksheet.cell(row, 5, claim_amount if claim_currency in {"RMB", "CNY"} else None)
+        worksheet.cell(row, 6, claim_amount if claim_currency not in {"HKD", "RMB", "CNY"} else None)
         worksheet.cell(row, 7, order.document_type)
         worksheet.cell(row, 8, order.missing_receipt_reason)
 
@@ -575,10 +684,12 @@ def write_reimbursement_workbook(
     worksheet.cell(total_row, 5, f"=SUM(E{item_start}:E{last_item_row})")
     worksheet.cell(total_row, 6, f"=SUM(F{item_start}:F{last_item_row})")
 
-    signature_date = datetime.strptime(submission_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+    signature_date = parse_excel_date(submission_date)
     for row in range(total_row + 1, min(worksheet.max_row, total_row + 12) + 1):
         if worksheet.cell(row, 7).value == "Date:":
-            worksheet.cell(row, 8, signature_date)
+            signature_date_cell = worksheet.cell(row, 8)
+            signature_date_cell.value = signature_date
+            signature_date_cell.number_format = EXCEL_DATE_FORMAT
             break
 
     workbook.save(output)
