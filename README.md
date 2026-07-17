@@ -92,7 +92,7 @@ uv run --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr scan `
   --profile auto
 ```
 
-If the variable is unset, the project is unavailable, or OCR fails, continue with the existing image-review workflow. OCR results are advisory in this phase and must not change SQLite state or evidence validity. See `prepare-reimbursements/references/local-ocr-bridge.md` for the command and output contract.
+If the variable is unset, the project is unavailable, or OCR fails, continue with the existing image-review workflow. OCR results are advisory in this phase and must not change SQLite state, evidence validity, or invoke the legacy screenshot-quarantine workaround. See `prepare-reimbursements/references/local-ocr-bridge.md` for the command and output contract.
 
 ## Known Issues
 

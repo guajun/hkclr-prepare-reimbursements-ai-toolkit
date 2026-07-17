@@ -108,7 +108,7 @@ When the variable is present:
 4. Read `ocr-summary.json` first. Read `ocr-manifest.jsonl` only to locate `review` or `error` records. Do not inject every OCR object's full text into the agent context.
 5. Do not run concurrent scans against the same output directory.
 
-An unset variable, missing project, failed health check, failed scan, unreadable result, or unsupported schema is a soft failure. Report it briefly and continue the current multimodal/manual evidence workflow. In this integration phase, external OCR must not modify reimbursement source files, the manifest, SQLite, quarantine decisions, or compiled workbooks.
+An unset variable, missing project, failed health check, failed scan, unreadable result, or unsupported schema is a soft failure. Report it briefly and continue the current multimodal/manual evidence workflow. In this integration phase, external OCR must not modify reimbursement source files, the manifest, SQLite, or compiled workbooks, and it must not invoke the legacy screenshot-quarantine workaround.
 
 ## Scripts
 

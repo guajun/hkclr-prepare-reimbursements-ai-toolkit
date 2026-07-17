@@ -4,7 +4,9 @@
 
 This bridge lets the reimbursement workflow call a separately maintained RapidOCR evaluation project without adding OCR code or dependencies to this toolkit.
 
-The bridge is intentionally advisory. The existing toolkit remains the owner of manifests, image-quality validation, SQLite state, quarantine decisions, and compiled outputs.
+The bridge is intentionally advisory. The existing toolkit remains the owner of manifests, image-quality validation, SQLite state, and compiled outputs.
+
+The screenshot-quarantine workflow is a legacy workaround for malformed Codex/VS Code in-app browser captures, including tiled or blank images. It is not an OCR lifecycle stage and is not an integration target for this bridge.
 
 ## Machine-Local Configuration
 
@@ -65,4 +67,4 @@ The OCR bridge may help locate transaction-number candidates, amount candidates,
 
 ## Failure Boundary
 
-Treat all bridge failures as soft failures in this phase. Do not install dependencies automatically, mutate the external project, retry indefinitely, or quarantine evidence based on OCR alone. Fall back to the existing multimodal/manual review path and report the bridge failure separately from reimbursement validation.
+Treat all bridge failures as soft failures in this phase. Do not install dependencies automatically, mutate the external project, retry indefinitely, or invoke the legacy screenshot-quarantine workflow from OCR results. Fall back to the existing multimodal/manual review path and report the bridge failure separately from reimbursement validation.
