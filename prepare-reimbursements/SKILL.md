@@ -23,13 +23,14 @@ description: Prepare reimbursement batches from local reimbursement folders, esp
 14. Sync the batch into SQLite with `scripts/sync_reimbursement_state.py`. The database records batches, orders, items, evidence files, validation results, and generated artifacts; the JSON snapshot is the review/diff format.
 15. To rebuild outputs after the DB exists, use `scripts/compile_reimbursement_outputs.py` instead of re-reading the edited Taobao export. This compiles the manifest, review workbook, reimbursement workbook, evidence checklist, capture queue, complete `generated/print-flat/all` folder, and compile summary from SQLite plus source evidence files.
 16. Resolve currency before final compilation. Keep purchase, payment, and reimbursement amounts separate. When any currency or amount remains uncertain, mark the order `needs_confirmation`, finish reviewing the batch, then ask the user once using the generated currency confirmation queue. Do not interrupt the user order by order.
-17. For travel reimbursement batches, run `scripts/sync_travel_reimbursement_state.py` to parse `差旅報銷清單_行程資料列表Reimbursement for travel expenses*.xlsx`, `差旅` images, and `差旅.docx` into SQLite travel tables and `travel-reimbursement-manifest.json`.
-18. To rebuild travel outputs after the DB exists, use `scripts/compile_travel_reimbursement_outputs.py`. This writes a generated travel workbook and `travel-evidence-summary.json` from SQLite state.
-19. If screenshot validation reports bad final evidence, run `scripts/quarantine_invalid_evidence.py` first as a dry run, then with `--apply` only after confirming the target list. Re-run evidence preparation and state sync afterwards so quarantined images no longer count.
-20. If the Codex in-app browser screenshot output is an abnormal 2x2 tiled image, especially around `4276x2404` after a forced `1920x1080` viewport override, stop the batch. Treat this as a browser screenshot backend failure and use a real browser capture engine instead of masking it with a crop.
-21. Search or filter the Alipay bill list only as a fallback when Taobao does not expose a usable `支付宝交易号`.
-22. For reimbursement-related live payment links or HTTP 402 payment responses, use the Alipay payment skills as a separate payment workflow, then return here to capture evidence and update the reimbursement packet.
-23. Do not automate login, 2FA, wallet binding, payment, or manual app-only flows without the user's explicit intent and active participation.
+17. When a vendor directly provides an official invoice or receipt PDF, store it as `invoice_pdf` or `receipt_pdf`. That single document satisfies evidence for the order; do not require or fabricate merchant-order and payment-record screenshots. Use the document's amount and currency for the claim and leave the missing-receipt reason blank.
+18. For travel reimbursement batches, run `scripts/sync_travel_reimbursement_state.py` to parse `差旅報銷清單_行程資料列表Reimbursement for travel expenses*.xlsx`, `差旅` images, and `差旅.docx` into SQLite travel tables and `travel-reimbursement-manifest.json`.
+19. To rebuild travel outputs after the DB exists, use `scripts/compile_travel_reimbursement_outputs.py`. This writes a generated travel workbook and `travel-evidence-summary.json` from SQLite state.
+20. If screenshot validation reports bad final evidence, run `scripts/quarantine_invalid_evidence.py` first as a dry run, then with `--apply` only after confirming the target list. Re-run evidence preparation and state sync afterwards so quarantined images no longer count.
+21. If the Codex in-app browser screenshot output is an abnormal 2x2 tiled image, especially around `4276x2404` after a forced `1920x1080` viewport override, stop the batch. Treat this as a browser screenshot backend failure and use a real browser capture engine instead of masking it with a crop.
+22. Search or filter the Alipay bill list only as a fallback when Taobao does not expose a usable `支付宝交易号`.
+23. For reimbursement-related live payment links or HTTP 402 payment responses, use the Alipay payment skills as a separate payment workflow, then return here to capture evidence and update the reimbursement packet.
+24. Do not automate login, 2FA, wallet binding, payment, or manual app-only flows without the user's explicit intent and active participation.
 
 ## Human And Agent Boundary
 

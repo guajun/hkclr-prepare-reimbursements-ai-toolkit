@@ -69,6 +69,12 @@ All workbook date cells must contain real Excel date values, not preformatted da
 
 The normal workbook does not embed screenshots. Evidence lives as separate screenshots/PDFs beside the workbook or in typed folders.
 
+### Direct Vendor Documents
+
+An official vendor invoice or receipt PDF can satisfy the full evidence requirement for one order. Record it as `invoice_pdf` or `receipt_pdf`; do not also require an order-detail screenshot and payment-record screenshot. Use the total and currency printed on the document as the claim amount and currency, and leave the missing receipt/invoice reason blank.
+
+The DB compiler omits valid direct-document orders from the Taobao capture queue, marks them complete in the evidence summary, and copies the PDF into `generated\print-flat\all`. Supplemental machine-readable invoice files such as XML may also be stored, but the printable PDF remains the primary evidence.
+
 ## Currency Resolution
 
 Store purchase, payment, and claim values independently:

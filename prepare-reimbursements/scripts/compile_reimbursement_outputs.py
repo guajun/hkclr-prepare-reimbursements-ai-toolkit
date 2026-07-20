@@ -171,8 +171,14 @@ def build_records_from_state(
             or evidence.get("taobao_order_detail_screenshot")
         )
         payment_evidence = evidence.get("payment_record_screenshot")
+        direct_evidence = evidence.get("invoice_pdf") or evidence.get("receipt_pdf")
+        required_direct_kind = next(
+            (kind for kind in order.evidence_required if kind in {"invoice_pdf", "receipt_pdf"}),
+            "",
+        )
         order_file, payment_file, combined_file = expected_evidence_files(order_index, order.order_no)
         folder = folder_from_evidence(batch_folder, order_index, order.order_no, evidence)
+        direct_hits = evidence_hits(batch_folder, direct_evidence)
         records.append(
             {
                 "index": order_index,
@@ -186,6 +192,16 @@ def build_records_from_state(
                 "order_image_warnings": evidence_warnings(order_evidence),
                 "payment_image_warnings": evidence_warnings(payment_evidence),
                 "combined_hits": [],
+                "direct_document_kind": (
+                    direct_evidence["evidence_kind"] if direct_evidence else required_direct_kind
+                ),
+                "direct_file": (
+                    direct_evidence["expected_filename"] or (direct_hits[0] if direct_hits else "")
+                    if direct_evidence
+                    else ""
+                ),
+                "direct_hits": direct_hits,
+                "direct_document_warnings": evidence_warnings(direct_evidence),
             }
         )
     return records
@@ -282,6 +298,31 @@ def write_evidence_summary(
             for record in records
             if record["payment_image_warnings"]
         ],
+        "direct_documents_present": sum(1 for record in records if record.get("direct_hits")),
+        "direct_documents_found": sum(
+            1
+            for record in records
+            if record.get("direct_hits") and not record.get("direct_document_warnings")
+        ),
+        "direct_document_warnings": [
+            {"folder": str(record["folder"]), "warnings": record.get("direct_document_warnings") or []}
+            for record in records
+            if record.get("direct_document_warnings")
+        ],
+        "evidence_complete": sum(
+            1
+            for record in records
+            if (
+                record.get("direct_hits")
+                and not record.get("direct_document_warnings")
+            )
+            or (
+                record["order_hits"]
+                and not record["order_image_warnings"]
+                and record["payment_hits"]
+                and not record["payment_image_warnings"]
+            )
+        ),
         "combined_receipts_found": sum(1 for record in records if record["combined_hits"]),
         "checklist": str(checklist_path),
         "queue": str(queue_path),

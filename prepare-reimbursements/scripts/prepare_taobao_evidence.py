@@ -302,6 +302,9 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
         "Payment Screenshot Found",
         "Payment Screenshot Check",
         "Combined Receipt Found",
+        "Direct Document Filename",
+        "Direct Document Found",
+        "Direct Document Check",
         "First Item Link",
     ]
     worksheet.append(headers)
@@ -330,12 +333,15 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
                 "YES" if record["payment_hits"] and not record["payment_image_warnings"] else "NO",
                 "; ".join(record["payment_image_warnings"]),
                 "YES" if record["combined_hits"] else "NO",
+                record.get("direct_file") or "",
+                "YES" if record.get("direct_hits") and not record.get("direct_document_warnings") else "NO",
+                "; ".join(record.get("direct_document_warnings") or []),
                 first_link,
             ]
         )
         if first_link:
-            worksheet.cell(worksheet.max_row, 19).hyperlink = first_link
-            worksheet.cell(worksheet.max_row, 19).style = "Hyperlink"
+            worksheet.cell(worksheet.max_row, 22).hyperlink = first_link
+            worksheet.cell(worksheet.max_row, 22).style = "Hyperlink"
         taobao_url = order.get("taobao_order_detail_url") or ""
         if taobao_url:
             worksheet.cell(worksheet.max_row, 3).hyperlink = taobao_url
@@ -344,7 +350,10 @@ def write_checklist(path: Path, records: list[dict[str, Any]]) -> None:
         if payment_url:
             worksheet.cell(worksheet.max_row, 5).hyperlink = payment_url
             worksheet.cell(worksheet.max_row, 5).style = "Hyperlink"
-    style_worksheet(worksheet, [6, 24, 70, 30, 80, 12, 22, 40, 12, 10, 72, 42, 42, 18, 34, 18, 34, 18, 50])
+    style_worksheet(
+        worksheet,
+        [6, 24, 70, 30, 80, 12, 22, 40, 12, 10, 72, 42, 42, 18, 34, 18, 34, 18, 42, 18, 34, 50],
+    )
 
     items = workbook.create_sheet("items")
     items.append(["Order No.", "Order Index", "Item Name", "Style", "Quantity", "Item Amount RMB", "Product Link"])
@@ -388,6 +397,19 @@ def write_capture_queue(path: Path, batch_folder: Path, records: list[dict[str, 
     ]
     for record in records:
         order = record["order"]
+        if record.get("direct_document_kind"):
+            if record.get("direct_hits") and not record.get("direct_document_warnings"):
+                continue
+            lines.extend(
+                [
+                    f"## {record['index']:02d}. {order['order_no']}",
+                    "",
+                    f"- Direct document required: `{record.get('direct_file') or record['direct_document_kind']}`",
+                    f"- Folder: `{record['folder']}`",
+                    "",
+                ]
+            )
+            continue
         lines.extend(
             [
                 f"## {record['index']:02d}. {order['order_no']}",
@@ -454,10 +476,23 @@ def write_print_flat_folder(path: Path, records: list[dict[str, Any]]) -> dict[s
     for record in records:
         order = record["order"]
         source_label = str(order.get("source") or "unknown").lower().replace(" ", "_")
-        printable_files = [
-            (f"{source_label}_order_detail", record["folder"] / record["order_file"]),
-            ("payment_record", record["folder"] / record["payment_file"]),
-        ]
+        if record.get("direct_document_kind"):
+            if not record.get("direct_file"):
+                warnings.append(
+                    f"Missing printable direct document for {record['index']:02d} {order['order_no']}"
+                )
+                continue
+            printable_files = [
+                (
+                    record["direct_document_kind"],
+                    record["folder"] / record["direct_file"],
+                )
+            ]
+        else:
+            printable_files = [
+                (f"{source_label}_order_detail", record["folder"] / record["order_file"]),
+                ("payment_record", record["folder"] / record["payment_file"]),
+            ]
         for label, source in printable_files:
             if not source.exists():
                 warnings.append(f"Missing printable source for {record['index']:02d} {order['order_no']}: {source.name}")
