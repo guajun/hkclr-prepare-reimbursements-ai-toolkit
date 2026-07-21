@@ -48,7 +48,7 @@ To rebuild generated outputs from SQLite without re-reading the edited Taobao ex
 uv run python scripts\compile_reimbursement_outputs.py --folder "<path-to-reimbursement-batch>"
 ```
 
-Use `--submission-date YYYY-MM-DD` when the workbook date should differ from today's date.
+The normal workbook's bottom-right date is derived from the latest reimbursed item date. The dated folder is only the batch creation date. `--submission-date YYYY-MM-DD` is an optional assertion and compilation fails if it differs from the derived date.
 
 The final normal reimbursement workbook is written in the batch folder. Review workbooks, manifests, summaries, and print-flat caches remain under `generated`.
 

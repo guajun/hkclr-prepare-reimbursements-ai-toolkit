@@ -124,6 +124,22 @@ def parse_excel_date(value: Any) -> date:
     raise ValueError(f"Unsupported reimbursement date: {value!r}")
 
 
+def reimbursement_date_for_orders(
+    orders: list[ReimbursementOrder],
+    requested_date: str | None = None,
+) -> str:
+    order_dates = [parse_excel_date(order.date) for order in orders if order.date]
+    if not order_dates:
+        raise ValueError("Cannot determine reimbursement date because no order dates are available")
+    latest_date = max(order_dates)
+    if requested_date and parse_excel_date(requested_date) != latest_date:
+        raise ValueError(
+            f"Reimbursement date must match the latest order date {latest_date.isoformat()}, "
+            f"not {requested_date}"
+        )
+    return latest_date.isoformat()
+
+
 def compact_spaces(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
@@ -740,7 +756,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--orders", type=Path, help="Edited Taobao order export. Defaults to 订单数据-报销.xlsx in folder")
     parser.add_argument("--out-dir", type=Path, help="Output directory. Defaults to <folder>/generated")
     parser.add_argument("--template", type=Path, help="Previous normal reimbursement workbook to use as template")
-    parser.add_argument("--submission-date", default=date.today().isoformat(), help="YYYY-MM-DD date for output filename and signature")
+    parser.add_argument(
+        "--submission-date",
+        help="Optional YYYY-MM-DD assertion; must match the latest reimbursed item date",
+    )
     parser.add_argument("--include-status", default="交易成功", help="Only include orders with this status; blank includes all statuses")
     parser.add_argument("--name", default="Li Gaoyang")
     parser.add_argument("--bank", default="HSBC")
@@ -762,14 +781,15 @@ def main() -> int:
     profile = build_profile(args)
 
     orders, skipped = read_taobao_orders(orders_path, args.include_status)
+    reimbursement_date = reimbursement_date_for_orders(orders, args.submission_date)
 
     manifest_path = out_dir / "reimbursement-manifest.json"
     review_path = out_dir / "reimbursement-review.xlsx"
-    workbook_path = out_dir / f"報銷清單_Reimbursement list {args.name} {args.submission_date}.xlsx"
+    workbook_path = out_dir / f"報銷清單_Reimbursement list {args.name} {reimbursement_date}.xlsx"
 
     write_manifest(manifest_path, orders_path, orders, skipped, profile)
     write_review_workbook(review_path, orders, skipped)
-    template_used = write_reimbursement_workbook(template, workbook_path, orders, profile, args.submission_date)
+    template_used = write_reimbursement_workbook(template, workbook_path, orders, profile, reimbursement_date)
 
     print(f"source: {orders_path}")
     print(f"template: {template_used}")

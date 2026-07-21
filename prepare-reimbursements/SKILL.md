@@ -44,6 +44,8 @@ Sort normal reimbursement output by source category first and date second. Keep 
 
 Default `Reason for missing receipt/invoice` to `商家未提供` only when document type is `淘寶截圖加付款紀錄 Taobao capture screen & payment record`. Do not carry that default into hard-copy receipts, soft-copy invoices, or missing-document rows.
 
+Treat the dated batch folder as the batch creation date only. Set the normal reimbursement workbook's bottom-right date to the latest reimbursed item date, regardless of the folder name or compilation date. Derive this automatically from order state; an explicit `--submission-date` is only a consistency assertion and must equal that latest date.
+
 ## Currency Resolution And Batch Confirmation
 
 Track three distinct facts for every normal reimbursement order:
@@ -162,7 +164,7 @@ Useful options:
 
 - `--out-dir <dir>` writes artifacts outside the batch folder.
 - `--template <xlsx>` uses an explicit previous normal reimbursement workbook.
-- `--submission-date YYYY-MM-DD` controls the signature date and output filename.
+- `--submission-date YYYY-MM-DD` optionally asserts the derived reimbursement date; it must equal the latest reimbursed item date.
 - `--include-status 交易成功` keeps the default status filter.
 
 Set applicant, bank, account, and leader values with `--name`, `--bank`, `--account`, and `--leader`.
@@ -193,7 +195,7 @@ The database is the transition state layer for #4/#5: it stores normalized order
 Rebuild generated outputs from SQLite state without reading the edited Taobao export:
 
 ```powershell
-uv run python scripts\compile_reimbursement_outputs.py --folder "<batch-folder>" --submission-date YYYY-MM-DD
+uv run python scripts\compile_reimbursement_outputs.py --folder "<batch-folder>"
 ```
 
 This compiler regenerates the compatibility manifest, review workbook, evidence checklist, capture queue, complete `generated\print-flat\all` folder across every order source, and `reimbursement-state-compile-summary.json`, then updates the generated-artifacts table in SQLite. The final normal reimbursement workbook is written in the batch folder beside the final travel workbook; summaries remain under `generated`. The Taobao-only evidence preparation command continues to maintain `generated\print-flat\taobao`. Run `scripts\sync_reimbursement_state.py` afterwards when you also want a fresh snapshot JSON.

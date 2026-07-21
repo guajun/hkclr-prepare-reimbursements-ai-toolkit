@@ -8,7 +8,7 @@ import copy
 import json
 import sys
 from dataclasses import asdict
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,7 @@ from build_taobao_normal_reimbursement import (
     claim_totals_by_currency,
     currency_confirmation_reason,
     find_template,
+    reimbursement_date_for_orders,
     validate_currency_reviews,
     write_reimbursement_workbook,
     write_review_workbook,
@@ -370,7 +371,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--evidence-root", type=Path, help="Evidence root. Defaults to <folder>/物品/taobao")
     parser.add_argument("--template", type=Path, help="Previous normal reimbursement workbook to use as template")
-    parser.add_argument("--submission-date", default=date.today().isoformat(), help="YYYY-MM-DD date for output filename and signature")
+    parser.add_argument(
+        "--submission-date",
+        help="Optional YYYY-MM-DD assertion; must match the latest reimbursed item date",
+    )
     parser.add_argument("--name")
     parser.add_argument("--bank")
     parser.add_argument("--account")
@@ -392,6 +396,7 @@ def main() -> int:
         batch_id = int(batch["id"])
         order_rows = load_orders(connection, batch_id)
         orders = [order for _, _, order in order_rows]
+        reimbursement_date = reimbursement_date_for_orders(orders, args.submission_date)
         currency_queue_path = generated / "currency-confirmation-queue.json"
         pending_currency_count = write_currency_confirmation_queue(currency_queue_path, orders)
         if pending_currency_count:
@@ -406,7 +411,7 @@ def main() -> int:
         workbook_path = (
             args.workbook_output.resolve()
             if args.workbook_output
-            else batch_folder / f"報銷清單_Reimbursement list {profile['name']} {args.submission_date}.xlsx"
+            else batch_folder / f"報銷清單_Reimbursement list {profile['name']} {reimbursement_date}.xlsx"
         )
         checklist_path = generated / "taobao-evidence-checklist.xlsx"
         queue_path = generated / "taobao-evidence-capture-queue.md"
@@ -414,6 +419,7 @@ def main() -> int:
         compile_summary_path = generated / "reimbursement-state-compile-summary.json"
 
         manifest = build_manifest(batch, profile, orders)
+        manifest["summary"]["reimbursement_date"] = reimbursement_date
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         write_review_workbook(review_path, orders, parse_skipped(batch))
 
@@ -421,7 +427,7 @@ def main() -> int:
             template = (args.template or find_template(batch_folder)).resolve()
         except FileNotFoundError:
             template = None
-        template_used = write_reimbursement_workbook(template, workbook_path, orders, profile, args.submission_date)
+        template_used = write_reimbursement_workbook(template, workbook_path, orders, profile, reimbursement_date)
 
         records = build_records_from_state(connection, batch_folder=batch_folder, orders=order_rows)
         write_checklist(checklist_path, records)
@@ -448,6 +454,7 @@ def main() -> int:
             "orders": len(orders),
             "items": sum(len(order.items) for order in orders),
             "claim_totals": claim_totals_by_currency(orders),
+            "reimbursement_date": reimbursement_date,
             "manifest": str(manifest_path),
             "review_workbook": str(review_path),
             "reimbursement_workbook": str(workbook_path),

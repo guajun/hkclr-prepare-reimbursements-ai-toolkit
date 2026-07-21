@@ -82,6 +82,8 @@ Normal reimbursement rows are ordered by source category before date. Keep the e
 
 Set `Reason for missing receipt/invoice` to `商家未提供` by default only for `淘寶截圖加付款紀錄 Taobao capture screen & payment record`. For hard-copy receipts, soft-copy invoices, and missing-document rows, preserve an explicit reason if one exists but do not inherit the Taobao default.
 
+The dated batch folder records when the batch was created; it does not determine the workbook's signature date. Set the bottom-right date in the normal reimbursement workbook to the latest reimbursed item date. The compiler derives this from order state. If `--submission-date` is supplied for compatibility, it must equal the derived latest date or compilation fails.
+
 ### Direct Vendor Documents
 
 An official vendor invoice or receipt PDF can satisfy the full evidence requirement for one order. Record it as `invoice_pdf` or `receipt_pdf`; do not also require an order-detail screenshot and payment-record screenshot. Use the total and currency printed on the document as the claim amount and currency, set document type to `電子發票 Soft copy invoice`, and leave the missing receipt/invoice reason blank.
@@ -166,7 +168,7 @@ The intended compiler model is:
 After SQLite state exists, rebuild normal Taobao outputs without re-reading the edited Taobao export:
 
 ```powershell
-uv run python scripts\compile_reimbursement_outputs.py --folder "<batch-folder>" --submission-date YYYY-MM-DD
+uv run python scripts\compile_reimbursement_outputs.py --folder "<batch-folder>"
 ```
 
 The compiler reads orders, items, evidence paths, validation status, and artifact state from SQLite. It may still read source screenshot files to create print-flat links and calculate artifact hashes. It should not parse `订单数据*.xlsx`.
