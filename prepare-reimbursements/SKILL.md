@@ -40,6 +40,10 @@ The agent parses the edited export, fills deterministic workbook fields, generat
 
 Use only the four document types defined by the historical workbook template. Never create merchant-specific document types. Treat Meituan, Jingdong, and other screenshot-plus-payment workflows as `淘寶截圖加付款紀錄 Taobao capture screen & payment record`.
 
+Sort normal reimbursement output by source category first and date second. Keep the established category order with Taobao first, followed by hqchip, Meituan, Jingdong, GitHub, Aliyun, and then unknown sources; sort dates ascending inside each category. Preserve source evidence folder indices even when output row numbers change.
+
+Default `Reason for missing receipt/invoice` to `商家未提供` only when document type is `淘寶截圖加付款紀錄 Taobao capture screen & payment record`. Do not carry that default into hard-copy receipts, soft-copy invoices, or missing-document rows.
+
 ## Currency Resolution And Batch Confirmation
 
 Track three distinct facts for every normal reimbursement order:

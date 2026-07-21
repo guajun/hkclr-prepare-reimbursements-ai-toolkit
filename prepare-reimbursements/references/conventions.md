@@ -78,6 +78,10 @@ The `Document type` column must use the historical template's values exactly:
 
 Do not create merchant-specific values. Taobao, Meituan, Jingdong, and any other workflow based on merchant screenshots plus a payment record all use the Taobao capture option. Vendor-issued electronic invoices and receipts use the soft-copy invoice option.
 
+Normal reimbursement rows are ordered by source category before date. Keep the established category order: Taobao, hqchip, Meituan, Jingdong, GitHub, Aliyun, then unknown sources. Within each category, sort dates ascending and use the original source index only as a stable tie-breaker. Output row numbers are regenerated sequentially; evidence folder indices remain unchanged.
+
+Set `Reason for missing receipt/invoice` to `商家未提供` by default only for `淘寶截圖加付款紀錄 Taobao capture screen & payment record`. For hard-copy receipts, soft-copy invoices, and missing-document rows, preserve an explicit reason if one exists but do not inherit the Taobao default.
+
 ### Direct Vendor Documents
 
 An official vendor invoice or receipt PDF can satisfy the full evidence requirement for one order. Record it as `invoice_pdf` or `receipt_pdf`; do not also require an order-detail screenshot and payment-record screenshot. Use the total and currency printed on the document as the claim amount and currency, set document type to `電子發票 Soft copy invoice`, and leave the missing receipt/invoice reason blank.

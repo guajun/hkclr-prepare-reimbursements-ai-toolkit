@@ -99,7 +99,24 @@ def load_batch(connection: Any, batch_folder: Path) -> Any:
 
 def load_orders(connection: Any, batch_id: int) -> list[tuple[int, int, ReimbursementOrder]]:
     rows = connection.execute(
-        "SELECT * FROM orders WHERE batch_id = ? ORDER BY source_order_index, id",
+        """
+        SELECT * FROM orders
+        WHERE batch_id = ?
+        ORDER BY
+            CASE source
+                WHEN 'taobao' THEN 1
+                WHEN 'hqchip' THEN 2
+                WHEN 'meituan' THEN 3
+                WHEN 'jingdong' THEN 4
+                WHEN 'github' THEN 5
+                WHEN 'aliyun' THEN 6
+                ELSE 99
+            END,
+            CASE WHEN order_date IS NULL OR order_date = '' THEN 1 ELSE 0 END,
+            order_date,
+            source_order_index,
+            id
+        """,
         (batch_id,),
     ).fetchall()
     orders: list[tuple[int, int, ReimbursementOrder]] = []

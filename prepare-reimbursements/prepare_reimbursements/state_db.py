@@ -18,6 +18,8 @@ DOCUMENT_TYPES = {
     "淘寶截圖加付款紀錄 Taobao capture screen & payment record",
     "沒有 Missing",
 }
+CAPTURE_DOCUMENT_TYPE = "淘寶截圖加付款紀錄 Taobao capture screen & payment record"
+DEFAULT_MISSING_RECEIPT_REASON = "商家未提供"
 
 
 def utc_now() -> str:
@@ -341,6 +343,11 @@ def upsert_order(
             f"Invalid document_type {document_type!r} for {source}:{order_no}; "
             f"expected one of {sorted(DOCUMENT_TYPES)}"
         )
+    missing_receipt_reason = order.get("missing_receipt_reason") or ""
+    if document_type == CAPTURE_DOCUMENT_TYPE:
+        missing_receipt_reason = missing_receipt_reason or DEFAULT_MISSING_RECEIPT_REASON
+    elif missing_receipt_reason == DEFAULT_MISSING_RECEIPT_REASON:
+        missing_receipt_reason = ""
     normalized_order = dict(order)
     normalized_order.update(
         {
@@ -351,6 +358,7 @@ def upsert_order(
             "currency_review_status": currency_review_status,
             "currency_note": currency_note,
             "document_type": document_type,
+            "missing_receipt_reason": missing_receipt_reason,
         }
     )
     connection.execute(
@@ -412,7 +420,7 @@ def upsert_order(
             order.get("shipping_rmb"),
             int(order.get("item_count") or len(order.get("items") or [])),
             document_type,
-            order.get("missing_receipt_reason"),
+            missing_receipt_reason,
             json_dumps(order.get("evidence_required") or []),
             json_dumps(normalized_order),
             now,

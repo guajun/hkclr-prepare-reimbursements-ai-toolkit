@@ -284,6 +284,14 @@ def claim_amount_for_order(order: ReimbursementOrder) -> float:
     return float(order.amount_rmb if order.claim_amount is None else order.claim_amount)
 
 
+def missing_receipt_reason_for_order(order: ReimbursementOrder) -> str:
+    if order.document_type == DEFAULT_DOC_TYPE:
+        return order.missing_receipt_reason or DEFAULT_MISSING_REASON
+    if order.missing_receipt_reason == DEFAULT_MISSING_REASON:
+        return ""
+    return order.missing_receipt_reason
+
+
 def claim_totals_by_currency(orders: list[ReimbursementOrder]) -> dict[str, float]:
     totals: dict[str, float] = {}
     for order in orders:
@@ -688,7 +696,7 @@ def write_reimbursement_workbook(
         worksheet.cell(row, 5, claim_amount if claim_currency in {"RMB", "CNY"} else None)
         worksheet.cell(row, 6, claim_amount if claim_currency not in {"HKD", "RMB", "CNY"} else None)
         worksheet.cell(row, 7, order.document_type)
-        worksheet.cell(row, 8, order.missing_receipt_reason)
+        worksheet.cell(row, 8, missing_receipt_reason_for_order(order))
 
     worksheet.data_validations.dataValidation = []
     document_type_validation = DataValidation(
