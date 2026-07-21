@@ -18,9 +18,16 @@ from typing import Any
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 
 
-DEFAULT_DOC_TYPE = "淘寶截圖加付款紀錄 Taobao capture screen & payment record"
+DOCUMENT_TYPES = (
+    "實體 Hard copy receipt/Invoice",
+    "電子發票 Soft copy invoice",
+    "淘寶截圖加付款紀錄 Taobao capture screen & payment record",
+    "沒有 Missing",
+)
+DEFAULT_DOC_TYPE = DOCUMENT_TYPES[2]
 DEFAULT_MISSING_REASON = "商家未提供"
 DEFAULT_EVIDENCE = ["taobao_order_detail_screenshot", "payment_record_screenshot"]
 EXCEL_DATE_FORMAT = "dd/mm/yyyy"
@@ -634,6 +641,11 @@ def write_reimbursement_workbook(
     submission_date: str,
 ) -> str:
     validate_currency_reviews(orders)
+    invalid_document_types = sorted(
+        {order.document_type for order in orders if order.document_type not in DOCUMENT_TYPES}
+    )
+    if invalid_document_types:
+        raise ValueError(f"Unsupported document type(s): {invalid_document_types}")
     output.parent.mkdir(parents=True, exist_ok=True)
     workbook, template_used = load_template_or_builtin(template, output, len(orders))
     worksheet = workbook.active
@@ -677,6 +689,15 @@ def write_reimbursement_workbook(
         worksheet.cell(row, 6, claim_amount if claim_currency not in {"HKD", "RMB", "CNY"} else None)
         worksheet.cell(row, 7, order.document_type)
         worksheet.cell(row, 8, order.missing_receipt_reason)
+
+    worksheet.data_validations.dataValidation = []
+    document_type_validation = DataValidation(
+        type="list",
+        formula1='"' + ",".join(DOCUMENT_TYPES) + '"',
+        allow_blank=True,
+    )
+    worksheet.add_data_validation(document_type_validation)
+    document_type_validation.add(f"G{item_start}:G{total_row - 1}")
 
     last_item_row = max(item_start, item_start + len(orders) - 1)
     worksheet.cell(total_row, 1, "Total:")

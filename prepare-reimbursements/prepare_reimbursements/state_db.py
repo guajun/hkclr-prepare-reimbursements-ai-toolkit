@@ -12,6 +12,12 @@ from typing import Any, Iterable
 SCHEMA_VERSION = 3
 SNAPSHOT_SCHEMA = "prepare-reimbursements.state.snapshot.v3"
 CURRENCY_REVIEW_STATUSES = {"resolved", "confirmed", "needs_confirmation"}
+DOCUMENT_TYPES = {
+    "實體 Hard copy receipt/Invoice",
+    "電子發票 Soft copy invoice",
+    "淘寶截圖加付款紀錄 Taobao capture screen & payment record",
+    "沒有 Missing",
+}
 
 
 def utc_now() -> str:
@@ -329,6 +335,12 @@ def upsert_order(
             f"expected one of {sorted(CURRENCY_REVIEW_STATUSES)}"
         )
     currency_note = order.get("currency_note")
+    document_type = order.get("document_type")
+    if document_type and document_type not in DOCUMENT_TYPES:
+        raise ValueError(
+            f"Invalid document_type {document_type!r} for {source}:{order_no}; "
+            f"expected one of {sorted(DOCUMENT_TYPES)}"
+        )
     normalized_order = dict(order)
     normalized_order.update(
         {
@@ -338,6 +350,7 @@ def upsert_order(
             "payment_currency": payment_currency,
             "currency_review_status": currency_review_status,
             "currency_note": currency_note,
+            "document_type": document_type,
         }
     )
     connection.execute(
@@ -398,7 +411,7 @@ def upsert_order(
             currency_note,
             order.get("shipping_rmb"),
             int(order.get("item_count") or len(order.get("items") or [])),
-            order.get("document_type"),
+            document_type,
             order.get("missing_receipt_reason"),
             json_dumps(order.get("evidence_required") or []),
             json_dumps(normalized_order),

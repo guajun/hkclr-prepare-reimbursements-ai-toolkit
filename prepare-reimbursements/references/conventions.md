@@ -69,9 +69,18 @@ All workbook date cells must contain real Excel date values, not preformatted da
 
 The normal workbook does not embed screenshots. Evidence lives as separate screenshots/PDFs beside the workbook or in typed folders.
 
+The `Document type` column must use the historical template's values exactly:
+
+- `實體 Hard copy receipt/Invoice`
+- `電子發票 Soft copy invoice`
+- `淘寶截圖加付款紀錄 Taobao capture screen & payment record`
+- `沒有 Missing`
+
+Do not create merchant-specific values. Taobao, Meituan, Jingdong, and any other workflow based on merchant screenshots plus a payment record all use the Taobao capture option. Vendor-issued electronic invoices and receipts use the soft-copy invoice option.
+
 ### Direct Vendor Documents
 
-An official vendor invoice or receipt PDF can satisfy the full evidence requirement for one order. Record it as `invoice_pdf` or `receipt_pdf`; do not also require an order-detail screenshot and payment-record screenshot. Use the total and currency printed on the document as the claim amount and currency, and leave the missing receipt/invoice reason blank.
+An official vendor invoice or receipt PDF can satisfy the full evidence requirement for one order. Record it as `invoice_pdf` or `receipt_pdf`; do not also require an order-detail screenshot and payment-record screenshot. Use the total and currency printed on the document as the claim amount and currency, set document type to `電子發票 Soft copy invoice`, and leave the missing receipt/invoice reason blank.
 
 The DB compiler omits valid direct-document orders from the Taobao capture queue, marks them complete in the evidence summary, and copies the PDF into `generated\print-flat\all`. Supplemental machine-readable invoice files such as XML may also be stored, but the printable PDF remains the primary evidence.
 

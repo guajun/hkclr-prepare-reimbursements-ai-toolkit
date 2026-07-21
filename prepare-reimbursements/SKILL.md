@@ -23,7 +23,7 @@ description: Prepare reimbursement batches from local reimbursement folders, esp
 14. Sync the batch into SQLite with `scripts/sync_reimbursement_state.py`. The database records batches, orders, items, evidence files, validation results, and generated artifacts; the JSON snapshot is the review/diff format.
 15. To rebuild outputs after the DB exists, use `scripts/compile_reimbursement_outputs.py` instead of re-reading the edited Taobao export. This compiles the manifest, review workbook, reimbursement workbook, evidence checklist, capture queue, complete `generated/print-flat/all` folder, and compile summary from SQLite plus source evidence files.
 16. Resolve currency before final compilation. Keep purchase, payment, and reimbursement amounts separate. When any currency or amount remains uncertain, mark the order `needs_confirmation`, finish reviewing the batch, then ask the user once using the generated currency confirmation queue. Do not interrupt the user order by order.
-17. When a vendor directly provides an official invoice or receipt PDF, store it as `invoice_pdf` or `receipt_pdf`. That single document satisfies evidence for the order; do not require or fabricate merchant-order and payment-record screenshots. Use the document's amount and currency for the claim and leave the missing-receipt reason blank.
+17. When a vendor directly provides an official invoice or receipt PDF, store it as `invoice_pdf` or `receipt_pdf`. That single document satisfies evidence for the order; do not require or fabricate merchant-order and payment-record screenshots. Use the document's amount and currency for the claim, set document type to `電子發票 Soft copy invoice`, and leave the missing-receipt reason blank.
 18. For travel reimbursement batches, run `scripts/sync_travel_reimbursement_state.py` to parse `差旅報銷清單_行程資料列表Reimbursement for travel expenses*.xlsx`, `差旅` images, and `差旅.docx` into SQLite travel tables and `travel-reimbursement-manifest.json`.
 19. To rebuild travel outputs after the DB exists, use `scripts/compile_travel_reimbursement_outputs.py`. This writes a generated travel workbook and `travel-evidence-summary.json` from SQLite state.
 20. If screenshot validation reports bad final evidence, run `scripts/quarantine_invalid_evidence.py` first as a dry run, then with `--apply` only after confirming the target list. Re-run evidence preparation and state sync afterwards so quarantined images no longer count.
@@ -37,6 +37,8 @@ description: Prepare reimbursement batches from local reimbursement folders, esp
 The human user decides which orders are reimbursable by deleting order numbers from the Taobao export. The user also handles login, 2FA, app-only evidence capture, and ambiguous business-purpose judgment.
 
 The agent parses the edited export, fills deterministic workbook fields, generates manifests, validates required evidence, and prepares screenshot capture checklists or browser automation steps where feasible.
+
+Use only the four document types defined by the historical workbook template. Never create merchant-specific document types. Treat Meituan, Jingdong, and other screenshot-plus-payment workflows as `淘寶截圖加付款紀錄 Taobao capture screen & payment record`.
 
 ## Currency Resolution And Batch Confirmation
 
