@@ -82,36 +82,21 @@ The toolkit can optionally collaborate with a separately maintained local RapidO
 
 Set `HKCLR_RAPIDOCR_PROJECT` to the external project's root directory. Do not commit an absolute local path to this repository.
 
-For the current PowerShell session:
+`HKCLR_RAPIDOCR_PROJECT` is the only discovery mechanism. Use an already provisioned external environment; if the variable is unset/invalid, skip OCR. Create a private typed job manifest of explicitly selected final evidence, then invoke:
 
 ```powershell
-$env:HKCLR_RAPIDOCR_PROJECT = "C:\path\to\hkclr-rapidocr-evaluation"
+# Set $batch to the local reimbursement batch directory first.
+$jobManifest = Join-Path $batch 'generated\ocr\jobs.json'
+$ocrOutput = Join-Path $batch 'generated\ocr\rapidocr'
+uv run --no-sync --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr doctor
+uv run --no-sync --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr run $jobManifest --output $ocrOutput --dry-run
 ```
 
-To persist it for the current Windows user and future shells:
+Before actual inference in a new or updated environment, run `doctor --initialize`, then omit `--dry-run`. Keep the manifest under `<batch-folder>\generated\ocr` and results under `<batch-folder>\generated\ocr\rapidocr`. This bridge uses job-manifest v1 and output v2, rather than recursive scans. Dry-run writes summary/run records without loading OCR or producing OCR objects.
 
-```powershell
-[Environment]::SetEnvironmentVariable(
-  "HKCLR_RAPIDOCR_PROJECT",
-  "C:\path\to\hkclr-rapidocr-evaluation",
-  "User"
-)
-```
+OCR failures and unsupported schemas leave the existing multimodal/manual review workflow unchanged. Results remain advisory: they must not change source evidence, reimbursement manifests, SQLite, compiled workbooks, evidence validity, or invoke the separate legacy screenshot-quarantine workflow. Keep all real job manifests and OCR output private.
 
-Run the external CLI through its own uv project and keep private OCR output inside the reimbursement batch:
-
-```powershell
-$batch = "C:\path\to\reimbursement-batch"
-$ocrOutput = Join-Path $batch "generated\ocr\rapidocr"
-
-uv run --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr doctor --initialize
-uv run --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr scan `
-  $batch `
-  --output $ocrOutput `
-  --profile auto
-```
-
-If the variable is unset, the project is unavailable, or OCR fails, continue with the existing image-review workflow. OCR results are advisory in this phase and must not change SQLite state, evidence validity, or invoke the legacy screenshot-quarantine workaround. Recursive scans may list derived `generated\print-flat` images as additional paths; do not interpret OCR path counts as unique evidence counts. See `prepare-reimbursements/references/local-ocr-bridge.md` for the command and output contract.
+See [the bridge contract and synthetic acceptance procedure](prepare-reimbursements/references/local-ocr-bridge.md) for schemas, privacy boundaries, fail-open behavior, and reproducible doctor/dry-run checks.
 
 ## Known Issues
 
