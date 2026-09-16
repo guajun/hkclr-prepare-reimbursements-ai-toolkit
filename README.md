@@ -76,27 +76,23 @@ uv run python scripts\quarantine_invalid_evidence.py --folder "<path-to-reimburs
 
 The first command is a dry run. The second moves only screenshots that already have validation warnings.
 
-## Optional Local OCR Bridge
+## OCR-first evidence review
 
-The toolkit can optionally collaborate with a separately maintained local RapidOCR project. This is an experimental, machine-local bridge: this repository does not install RapidOCR, import its Python package, or write OCR results into SQLite.
+The toolkit calls a separately maintained local RapidOCR project through its versioned CLI. It builds canonical jobs, caches results, compares extracted candidates with known facts, and reports focused review reasons. It does not install RapidOCR or import its Python package.
 
 Set `HKCLR_RAPIDOCR_PROJECT` to the external project's root directory. Do not commit an absolute local path to this repository.
 
-`HKCLR_RAPIDOCR_PROJECT` is the only discovery mechanism. Use an already provisioned external environment; if the variable is unset/invalid, skip OCR. Create a private typed job manifest of explicitly selected final evidence, then invoke:
+`HKCLR_RAPIDOCR_PROJECT` is the only discovery mechanism. Windows User configuration is read when absent from the current process. Use an already provisioned external environment, then start reviewing as soon as evidence arrives:
 
 ```powershell
-# Set $batch to the local reimbursement batch directory first.
-$jobManifest = Join-Path $batch 'generated\ocr\jobs.json'
-$ocrOutput = Join-Path $batch 'generated\ocr\rapidocr'
-uv run --no-sync --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr doctor
-uv run --no-sync --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr run $jobManifest --output $ocrOutput --dry-run
+uv run python prepare-reimbursements/scripts/review_evidence_ocr.py --folder "<batch-folder>"
 ```
 
-Before actual inference in a new or updated environment, run `doctor --initialize`, then omit `--dry-run`. Keep the manifest under `<batch-folder>\generated\ocr` and results under `<batch-folder>\generated\ocr\rapidocr`. This bridge uses job-manifest v1 and output v2, rather than recursive scans. Dry-run writes summary/run records without loading OCR or producing OCR objects.
+Read `generated/ocr/ocr-review.json` before opening images. The wrapper validates job-manifest v1 and output v2, uses per-run output directories, bounded subprocess calls and locks, and reuses valid cached results. `--dry-run` checks transport only. XML/readable PDFs use text extraction directly. New unclassified screenshots can use generic OCR to obtain text for classification.
 
-OCR failures and unsupported schemas leave the existing multimodal/manual review workflow unchanged. Results remain advisory: they must not change source evidence, reimbursement manifests, SQLite, compiled workbooks, evidence validity, or invoke the separate legacy screenshot-quarantine workflow. Keep all real job manifests and OCR output private.
+Candidate metadata is saved separately in SQLite OCR tables; original evidence, claim values and validity are untouched. Failures are reported before visual fallback, and explicit OCR requests must not silently turn into full-batch image inspection. Text matches are not automatic reimbursement acceptance. Full text/boxes stay in private sidecars. Review images only for stated unresolved fields or layout checks; never invoke quarantine from OCR output.
 
-See [the bridge contract and synthetic acceptance procedure](prepare-reimbursements/references/local-ocr-bridge.md) for schemas, privacy boundaries, fail-open behavior, and reproducible doctor/dry-run checks.
+See [the review workflow](prepare-reimbursements/references/ocr-first-review.md) for overrides, review routes and local configuration, and [the bridge contract](prepare-reimbursements/references/local-ocr-bridge.md) for schema details and acceptance checks.
 
 ## Known Issues
 

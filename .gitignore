@@ -20,3 +20,12 @@ reimbursement-review.xlsx
 *.sqlite
 *.sqlite3
 *.db
+
+# Private OCR requests, candidates and raw recognized text
+generated/
+*.ocr.json
+ocr-manifest.jsonl
+ocr-summary.json
+external-ocr-run-summary.json
+ocr-review.json
+evidence-overrides.json
