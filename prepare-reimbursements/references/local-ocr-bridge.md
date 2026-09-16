@@ -1,10 +1,10 @@
-# Optional Local OCR Bridge
+# Local OCR CLI contract
 
 ## Scope and discovery
 
-This documentation-only bridge calls a separately maintained RapidOCR project. It adds no toolkit wrapper, Python integration, RapidOCR/ONNX Runtime dependency, or SQLite changes. OCR is advisory; the toolkit owns reimbursement manifests, image-quality validation, state, and compiled outputs.
+The toolkit wrapper calls a separately maintained RapidOCR project through its CLI. It adds no RapidOCR/ONNX Runtime dependency or direct imports from the external checkout. OCR remains advisory; the toolkit owns reimbursement manifests, image-quality validation, state, and compiled outputs. Use [the OCR-first workflow](ocr-first-review.md) for normal batch review; the commands below describe the underlying contract and acceptance checks.
 
-`HKCLR_RAPIDOCR_PROJECT` is the only machine-local discovery mechanism. Set it to the external uv project root in the local environment; never commit its value or search for an alternative checkout. Before invoking uv, check that it is nonempty, names an existing directory, and that directory contains `pyproject.toml`. Otherwise skip OCR and continue the existing workflow.
+`HKCLR_RAPIDOCR_PROJECT` is the only machine-local discovery mechanism. Set it to the external uv project root in the local environment; never commit its value or search for an alternative checkout. The wrapper uses process configuration first and the Windows User value if the process has no setting. It validates the directory and `pyproject.toml`; invalid configuration returns a reported unavailable state. An explicitly empty process value disables OCR.
 
 Use the already provisioned external environment. `--no-sync` prevents uv from automatically installing/updating dependencies. Missing uv, environment, or `hkclr-ocr` is a soft failure, not an installation request.
 
@@ -25,7 +25,7 @@ uv run --no-sync --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr run $jobManifes
 
 Plain `doctor` reports package versions without loading OCR and can exit zero with optional runtime packages absent. Only `doctor --initialize` tests engine initialization. Dry-run validates jobs and inspects/hashes images without inference; it still writes summary and run-record files. It does not establish OCR accuracy or evidence validity.
 
-Run one process per batch; do not share an output directory between concurrent runs. Use `run <job-manifest>` for this bridge, not recursive `scan`. Select explicit final evidence paths, excluding raw captures, print-flat copies, quarantine, and OCR outputs. This request manifest is separate from `reimbursement-manifest.json`. This phase defines the handoff without adding an automated toolkit manifest generator.
+Use `run <job-manifest>` for this bridge. The toolkit job producer selects canonical source paths, excluding raw captures, print-flat copies, quarantine, and OCR outputs. The wrapper serializes each batch output with a lock and creates an isolated run directory; it enforces timeouts and checks result schemas, identity and source hashes. The request manifest is separate from `reimbursement-manifest.json`. For direct manual CLI use, do not share an output directory between concurrent runs.
 
 ## Input contract
 
@@ -66,11 +66,11 @@ Dry-run rows have `status = dry_run`, `ocr_status = not_run`, and `profile_suppo
 
 ## Privacy and fail-open boundary
 
-Source images are read-only. The external process may write only its designated private derived output directory. It must not edit source evidence, the reimbursement manifest, SQLite, compiled workbooks, or evidence validity. This is an integration policy, not an OS sandbox: review the external CLI and choose a separate output directory that cannot overwrite source/state files.
+Source images are read-only. The external process may write only its designated private derived output directory. It must not edit source evidence, the reimbursement manifest, SQLite, compiled workbooks, or evidence validity. The toolkit may separately persist validated result candidates to OCR-only SQLite tables. This is an integration policy, not an OS sandbox: review the external CLI and choose a separate output directory that cannot overwrite source/state files.
 
 Keep job manifests and results under the local batch's `generated/ocr/` tree, outside this repository. Absolute paths, IDs, business context, recognized text, errors, summaries, and overlays can all reveal reimbursement/payment data. Do not commit, upload, or paste them wholesale into agent prompts. Read only the fields needed for review. Local inference does not promise an unprovisioned runtime never downloads models; provision dependencies/models separately. Do not silently install resources to rescue a failed bridge.
 
-All bridge failures are fail-open **for reimbursement preparation**, not automatic evidence acceptance: unset/invalid configuration, missing CLI/runtime, failed doctor/run, invalid input, unreadable output, or unsupported schema leave the existing multimodal/manual workflow unchanged. Report OCR failure separately from reimbursement validation. Do not modify the external project, retry indefinitely, or let OCR override known order data, image-quality warnings, or human judgment.
+All bridge failures are fail-open **for reimbursement preparation**, not automatic evidence acceptance: report unset/invalid configuration, missing CLI/runtime, failed doctor/run, invalid input, unreadable output, or unsupported schema separately from reimbursement validation. If the user requested OCR explicitly, explain an unavailable state before any visual fallback and continue supported text/PDF work. Do not silently open an entire batch of images, modify the external project as a fallback, retry indefinitely, or let OCR override known order data, image-quality warnings, or human judgment.
 
 Screenshot quarantine is a separate legacy workaround for malformed Codex/VS Code browser captures, including tiled/blank images. It is not an OCR stage. OCR results must never invoke `quarantine_invalid_evidence.py`, move/delete evidence, or create quarantine validation decisions. Its existing independent image-validation workflow remains unchanged.
 

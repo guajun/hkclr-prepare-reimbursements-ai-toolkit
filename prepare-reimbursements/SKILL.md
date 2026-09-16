@@ -13,12 +13,12 @@ description: Prepare reimbursement batches from local reimbursement folders, esp
 4. Use Taobao's column-A merged row spans as order boundaries. Treat a blank top-left order number in that merged span as the user's explicit exclusion marker. Keep all SKU rows inside a valid merged span.
 5. Generate three artifacts: `reimbursement-manifest.json`, `reimbursement-review.xlsx`, and `報銷清單_Reimbursement list <name> <date>.xlsx`.
 6. Report skipped counts, especially blank order numbers and non-success order statuses.
-7. For Taobao evidence capture, open each manifest order's `taobao_order_detail_url`, capture the order-detail screenshot with the Taobao order-detail bbox preset below, and extract the field labelled `支付宝交易号`.
+7. As soon as source evidence is available, follow OCR-First Evidence Review below before opening individual images. For Taobao capture, use each manifest order's `taobao_order_detail_url` and the bbox preset below; extract `支付宝交易号` from local OCR text or page text.
 8. Merge browser capture results back into the manifest with `scripts/merge_taobao_capture_results.py`, then open each `alipay_detail_url` directly for payment-record screenshots.
 9. Before batch Alipay screenshots, calibrate the screenshot preset in `references/conventions.md`: use one logged-in Alipay detail tab, keep it alive for the batch, save one raw viewport screenshot, normalize it with `scripts/normalize_alipay_payment_screenshots.py`, and inspect the result. Reuse the same tab, browser shape, and screenshot call for the batch.
 10. Save Alipay raw screenshots under each order's `_raw_payment_screenshots` folder. Produce final payment screenshots only by running `scripts/normalize_alipay_payment_screenshots.py`; do not hand-crop or accept raw tiled screenshots as final evidence.
-11. Reopen or inspect the normalized Alipay payment screenshot before accepting it. It must show `交易成功`, product or counterparty, `流水号`, time, `订单金额`, `= 实付金额`, final paid amount, and payment method. If the raw screenshot does not match an approved preset, stop and recalibrate instead of guessing a crop.
-12. If `HKCLR_RAPIDOCR_PROJECT` is set, read `references/local-ocr-bridge.md` and create a private typed job manifest of selected final evidence and run `hkclr-ocr run <job-manifest>` once after final screenshots exist. Treat its output as advisory: use its summary to prioritize review, but do not update SQLite state or evidence validity from OCR in this phase. If the variable is unset or the external command fails, continue with the existing image-review workflow.
+11. Use OCR candidates and known order facts to check normalized Alipay evidence for `交易成功`, product/counterparty, transaction number, date, paid amount, and payment method. Visually inspect the first capture of a new layout/preset and any unresolved extraction or layout issue; do not reopen every unchanged image. An unapproved raw preset needs visual calibration.
+12. Run `scripts/review_evidence_ocr.py --folder <batch>` whenever new evidence arrives, without waiting for the complete batch. Read its compact review file first. It reuses local OCR caches, persists candidates separately, and lists evidence requiring text or visual review. OCR never overwrites claim amounts or evidence-validity decisions.
 13. Run `scripts/prepare_taobao_evidence.py` after final screenshots exist. It refreshes `generated/print-flat/taobao`, a flat all-screenshots print folder with sequential symlinks or hardlinks back to the per-order evidence files, so the user can select all and print while preserving one source of truth.
 14. Sync the batch into SQLite with `scripts/sync_reimbursement_state.py`. The database records batches, orders, items, evidence files, validation results, and generated artifacts; the JSON snapshot is the review/diff format.
 15. To rebuild outputs after the DB exists, use `scripts/compile_reimbursement_outputs.py` instead of re-reading the edited Taobao export. This compiles the manifest, review workbook, reimbursement workbook, evidence checklist, capture queue, complete `generated/print-flat/all` folder, and compile summary from SQLite plus source evidence files.
@@ -124,19 +124,23 @@ Do not install or run `alipay-bot` merely to fetch Taobao orders, historical Ali
 
 When an Alipay payment skill is used, follow that skill's own wallet authorization, URL preservation, MEDIA handling, and user-consent rules exactly. Do not merge those CLI instructions into this skill's scripts.
 
-## Optional Local OCR Bridge
+## OCR-First Evidence Review
 
 `HKCLR_RAPIDOCR_PROJECT` is the only supported discovery mechanism for the experimental external OCR project. Do not guess common filesystem locations, search the machine for an OCR checkout, or add an absolute path to tracked files.
 
-When the variable is present, read [the bridge contract](references/local-ocr-bridge.md) before creating a job manifest or consuming results:
+Read [the bridge contract](references/local-ocr-bridge.md) for schemas and [the review workflow](references/ocr-first-review.md) for commands and overrides. Start evidence review with this local command:
 
-1. Confirm the configured directory exists and contains `pyproject.toml`; do not search for an alternative project.
-2. Use the pre-provisioned external environment: `uv run --no-sync --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr doctor`. Before actual inference in a new or updated environment, also run `doctor --initialize`. Plain doctor and dry-run do not prove inference readiness.
-3. Create a private `hkclr.rapidocr.job-manifest.v1` request with stable evidence IDs, absolute source paths, explicit profiles, expected fields, and minimal business context. Select final evidence only; exclude raw captures, print-flat copies, quarantine, and OCR outputs.
-4. Run `uv run --no-sync --project $env:HKCLR_RAPIDOCR_PROJECT hkclr-ocr run <job-manifest> --output <batch-folder>\generated\ocr\rapidocr`. Add `--dry-run` to validate/hash jobs without inference. Do not run concurrent jobs against the same output directory.
-5. Read `ocr-summary.json` first and check supported schema versions. Inspect v2 run records only as needed, prioritizing errors, unsupported layouts, top-level `profile_check = review`, and adapter warnings. Inspect individual result objects/source images only for review. Dry-run is not evidence acceptance and does not write OCR objects.
+```powershell
+uv run python scripts\review_evidence_ocr.py --folder "<batch-folder>"
+```
 
-An unset/invalid variable, missing project/CLI/runtime, failed doctor/run, invalid manifest, unreadable result, or unsupported schema is a soft failure. Report it briefly and continue the existing multimodal/manual review path; do not consume stale output, automatically install dependencies, or retry indefinitely. Keep manifests/results private and never inject all OCR text into agent context. OCR may write only its designated derived output directory, never source evidence, reimbursement manifests, SQLite, compiled workbooks, or evidence-validity decisions. The legacy screenshot-quarantine workaround remains a separate image-validation workflow and must never be invoked by OCR results.
+The wrapper reads `HKCLR_RAPIDOCR_PROJECT` from the process environment, then the Windows User environment when absent. It selects canonical files from state, excludes raw/generated copies, invokes the external CLI with timeout and lock protection, validates result identity/hashes, and writes a compact `generated/ocr/ocr-review.json`. Unknown source images can first use generic OCR so text is available for classification. Read native PDF/XML text directly; do not rasterize readable documents merely to use OCR.
+
+Use `text_verified` candidates for textual fact review; this is not evidence acceptance. For `text_review` or extraction warnings, read the affected fields and a targeted OCR excerpt before opening an image. Use native vision only for unresolved fields, unsupported layouts, source-quality checks, or required final layout QA. Review each unchanged source hash only once; explain why any repeat or full-batch visual inspection is needed. Start with at most three necessary image inspections per batch, then summarize remaining reasons and expected number before increasing that working budget. This is a progress checkpoint, not a requirement to ask permission for each image.
+
+If OCR is unavailable, report its exact reason before any visual fallback. When the user explicitly requested OCR, repair the already-authorized local configuration first; if blocked, continue text/PDF/XML work and report the blocker instead of silently doing full-batch native vision. Keep failures fail-open for reimbursement preparation: preserve existing claims and permit manual review, never treat failure as approval. Do not automatically install dependencies, consume stale output, or retry indefinitely.
+
+Candidate metadata may be saved to separate OCR tables in the existing SQLite database. Full OCR text and boxes stay in private sidecar files; they do not enter the normal state snapshot. Only later explicit confirmation can update business state. OCR never invokes the screenshot-quarantine workaround.
 
 ## Scripts
 

@@ -9,8 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
-SCHEMA_VERSION = 3
-SNAPSHOT_SCHEMA = "prepare-reimbursements.state.snapshot.v3"
+SCHEMA_VERSION = 4
+SNAPSHOT_SCHEMA = "prepare-reimbursements.state.snapshot.v4"
 CURRENCY_REVIEW_STATUSES = {"resolved", "confirmed", "needs_confirmation"}
 DOCUMENT_TYPES = {
     "實體 Hard copy receipt/Invoice",
@@ -265,6 +265,45 @@ def migrate(connection: sqlite3.Connection) -> None:
             """
         )
         current = 3
+
+    if current < 4:
+        connection.executescript(
+            """
+            CREATE TABLE ocr_runs (
+                run_id TEXT PRIMARY KEY,
+                batch_folder TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                summary_path TEXT,
+                configuration_hash TEXT NOT NULL,
+                schemas_json TEXT NOT NULL,
+                metrics_json TEXT NOT NULL
+            );
+            CREATE TABLE ocr_results (
+                run_id TEXT NOT NULL REFERENCES ocr_runs(run_id),
+                evidence_id TEXT NOT NULL,
+                source_sha256 TEXT NOT NULL,
+                profile TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                adapter_version TEXT NOT NULL,
+                configuration_hash TEXT NOT NULL,
+                result_schema TEXT NOT NULL,
+                cache_key TEXT,
+                result_path TEXT,
+                ocr_status TEXT NOT NULL,
+                review_status TEXT NOT NULL,
+                candidates_json TEXT NOT NULL,
+                warnings_json TEXT NOT NULL,
+                elapsed_seconds REAL,
+                PRIMARY KEY (run_id, evidence_id)
+            );
+            CREATE INDEX idx_ocr_results_identity ON ocr_results
+                (source_sha256, provider, model, adapter_version, profile, configuration_hash);
+            CREATE INDEX idx_ocr_runs_batch ON ocr_runs(batch_folder, created_at);
+            PRAGMA user_version = 4;
+            """
+        )
 
     connection.commit()
 
@@ -900,4 +939,14 @@ def snapshot(connection: sqlite3.Connection, *, batch_id: int, db_path: Path) ->
             "evidence": travel_evidence,
         },
         "artifacts": artifacts,
+        "ocr": [
+            {"run_id": row["run_id"], "status": row["status"],
+             "created_at": row["created_at"], "summary_path": row["summary_path"],
+             "metrics": json_loads(row["metrics_json"], {})}
+            for row in connection.execute(
+                "SELECT run_id,status,created_at,summary_path,metrics_json FROM ocr_runs "
+                "WHERE batch_folder = ? ORDER BY created_at DESC LIMIT 1",
+                (batch["batch_folder"],),
+            ).fetchall()
+        ],
     }
