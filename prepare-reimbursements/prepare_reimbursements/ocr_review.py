@@ -347,6 +347,10 @@ def persist_review(db_path: Path, *, batch_folder: Path, run: dict[str, Any], re
 
 
 def review_outputs(batch_folder: Path, run: dict[str, Any], *, persist: bool = True, visual_budget: int = 3) -> dict[str, Any]:
+    root = (batch_folder / "generated" / "ocr").resolve()
+    if not root.is_relative_to(batch_folder.resolve()):
+        return {"schema": REVIEW_SCHEMA, "status": "unavailable", "counts": {}, "evidence_count": 0,
+                "visual_budget_exceeded": False, "reason": "output_outside_private_ocr_directory"}
     # A stored run can be reviewed later, after a source or result changed. Keep
     # its candidates visible but never label their comparison as text-verified.
     checked_records = []
@@ -376,6 +380,9 @@ def review_outputs(batch_folder: Path, run: dict[str, Any], *, persist: bool = T
     run_key = hashlib.sha256(str(run.get("run_id") or "unavailable").encode("utf-8")).hexdigest()
     review_key = hashlib.sha256(json.dumps(review, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     run_output = batch_folder / "generated" / "ocr" / "reviews" / run_key / f"{review_key}.json"
+    if not all(path.resolve().is_relative_to(root) for path in (output, run_output)):
+        return {"schema": REVIEW_SCHEMA, "status": "unavailable", "counts": {}, "evidence_count": 0,
+                "visual_budget_exceeded": False, "reason": "output_outside_private_ocr_directory"}
     atomic_json(run_output, review)
     atomic_json(output, review)
     persistence_error = None
@@ -396,6 +403,8 @@ def review_outputs(batch_folder: Path, run: dict[str, Any], *, persist: bool = T
 def read_evidence_excerpt(batch_folder: Path, evidence_id: str) -> dict[str, Any]:
     """Read one bounded text excerpt only if its saved result/source identities hold."""
     root = (batch_folder / "generated" / "ocr").resolve()
+    if not root.is_relative_to(batch_folder.resolve()) or not (root / "ocr-review.json").resolve().is_relative_to(root):
+        raise ValueError("Review path is outside the private OCR output")
     review = json.loads((root / "ocr-review.json").read_text(encoding="utf-8"))
     if review.get("schema") != REVIEW_SCHEMA:
         raise ValueError("Unsupported review schema")

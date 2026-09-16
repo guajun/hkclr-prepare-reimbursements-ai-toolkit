@@ -9,10 +9,30 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from prepare_reimbursements import ocr_review as review
 from prepare_reimbursements import state_db
+
+
+class OutputContainmentTests(unittest.TestCase):
+    def test_review_rejects_resolved_root_outside_batch_before_io(self):
+        with tempfile.TemporaryDirectory() as temp:
+            batch = Path(temp) / "batch"
+            batch.mkdir()
+            outside = Path(temp) / "outside"
+            original = Path.resolve
+            def redirected(path, *args, **kwargs):
+                if path == batch / "generated" / "ocr":
+                    return original(outside)
+                return original(path, *args, **kwargs)
+            with patch.object(Path, "resolve", redirected):
+                result = review.review_outputs(batch, {"status": "unavailable"})
+                self.assertEqual(result["reason"], "output_outside_private_ocr_directory")
+                with self.assertRaises(ValueError):
+                    review.read_evidence_excerpt(batch, "synthetic-001")
+            self.assertFalse(outside.exists())
 
 
 def field(value, confidence=0.99, **extras):
